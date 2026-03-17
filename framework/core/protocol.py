@@ -1,17 +1,24 @@
 class MsgType:
-    GAME_LIST = "game_list"
-    ROOM      = "room"
-    STATE     = "state"
-    REQUEST   = "request"
-    LOG       = "log"
-    ERROR     = "error"
-    GAME_OVER = "game_over"
-    PONG      = "pong"
-    LIST      = "list"
-    CREATE    = "create"
-    JOIN      = "join"
-    RESPONSE  = "response"
-    PING      = "ping"
+    # Server → Client
+    GAME_LIST  = "game_list"
+    ROOM       = "room"
+    STATE      = "state"
+    REQUEST    = "request"
+    LOG        = "log"
+    ERROR      = "error"
+    GAME_OVER  = "game_over"
+    PONG       = "pong"
+    COUNTDOWN  = "countdown"   # 倒计时（满员自动开始）
+
+    # Client → Server
+    LIST       = "list"
+    CREATE     = "create"
+    JOIN       = "join"
+    RESPONSE   = "response"
+    PING       = "ping"
+    ADD_AI     = "add_ai"      # 房主添加 AI
+    START_GAME = "start_game"  # 房主手动开始
+
 
 class ErrorCode:
     WRONG_PASSWORD = "wrong_password"
@@ -20,3 +27,4 @@ class ErrorCode:
     GAME_STARTED   = "game_started"
     INVALID_MSG    = "invalid_msg"
     NOT_YOUR_TURN  = "not_your_turn"
+    FORBIDDEN      = "forbidden"

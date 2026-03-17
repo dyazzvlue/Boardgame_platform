@@ -25,7 +25,7 @@ class NetBridge(AbstractBridge):
 
     def ask(self, player_idx: int, kind: str, data: dict) -> Any:
         member = self._room.get_player_by_idx(player_idx)
-        if member is None or not member.connected:
+        if member is None or not member.connected or member.is_ai:
             return None
         with self._ask_lock:
             self._pending_player_idx = player_idx
@@ -64,7 +64,8 @@ class NetBridge(AbstractBridge):
         while True:
             msg = await self._broadcast_q.get()
             for member in list(self._room.members):
-                if not member.connected:
+                # 跳过 AI 占位（无 WS）和已断线成员
+                if not member.connected or member.is_ai:
                     continue
                 try:
                     await member.ws.send_json(msg)
