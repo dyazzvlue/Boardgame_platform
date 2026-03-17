@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>GamePlatform</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#1a1a2e;color:#e0e0e0;font-family:'Segoe UI',sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center}
+h1{font-size:2rem;margin-bottom:2rem;color:#f0c040}
+#lobby,#room-waiting,#game-wrap{width:100%;max-width:900px;padding:1.5rem}
+.panel{background:#16213e;border-radius:12px;padding:1.5rem;margin-bottom:1rem}
+h2{color:#f0c040;margin-bottom:1rem;font-size:1.2rem}
+input{background:#0f3460;border:1px solid #444;color:#eee;padding:.5rem .8rem;border-radius:6px;font-size:1rem;width:100%}
+button{background:#e94560;color:#fff;border:none;padding:.6rem 1.4rem;border-radius:6px;cursor:pointer;font-size:1rem}
+button:hover{background:#c73652}
+button.secondary{background:#0f3460}
+button.secondary:hover{background:#163d6e}
+.game-card{display:inline-block;background:#0f3460;border-radius:8px;padding:1rem;margin:.4rem;cursor:pointer;border:2px solid transparent;transition:.2s}
+.game-card:hover,.game-card.selected{border-color:#f0c040}
+.game-card h3{color:#f0c040;font-size:1rem}
+.game-card small{color:#aaa}
+.row{display:flex;gap:.8rem;align-items:center;margin-top:.8rem}
+.row label{min-width:80px;color:#aaa}
+#error-msg{color:#e94560;margin-top:.5rem;min-height:1.2em}
+#player-list{margin-top:.8rem}
+.player-item{background:#0f3460;border-radius:6px;padding:.4rem .8rem;margin:.3rem 0;display:flex;align-items:center;gap:.5rem}
+.player-item .badge{font-size:.75rem;background:#e94560;border-radius:4px;padding:.1rem .4rem}
+.player-item .badge.ai{background:#444}
+.player-item .badge.spectator{background:#2a4080}
+.hidden{display:none}
+#game-wrap{display:none}
+canvas{display:block;border-radius:8px;background:#0a0a1e}
+#log-panel{background:#111;border-radius:8px;padding:.6rem;height:180px;overflow-y:auto;margin-top:.6rem;font-size:.82rem;line-height:1.5}
+.log-normal{color:#ccc}.log-header{color:#f0c040;font-weight:bold}
+.log-section{color:#8ecfff}.log-bid{color:#ffa500}.log-deploy{color:#55c8a8}
+.log-dice{color:#cf9aee}.log-profit{color:#5ad68a}.log-warn{color:#ff6b6b}
+.log-ai{color:#9090c0}.log-dim{color:#666}
+</style>
+</head>
+<body>
+<!-- 大厅 -->
+<div id="lobby">
+  <h1>🎲 GamePlatform</h1>
+  <div class="panel">
+    <h2>选择游戏</h2>
+    <div id="game-list">加载中...</div>
+  </div>
+  <div class="panel">
+    <h2>创建房间</h2>
+    <div class="row"><label>你的名字</label><input id="create-name" value="玩家1"></div>
+    <div class="row"><label>人数</label>
+      <select id="create-count" style="background:#0f3460;color:#eee;border:1px solid #444;padding:.5rem;border-radius:6px">
+        <option value="3">3</option><option value="4" selected>4</option><option value="5">5</option>
+      </select>
+    </div>
+    <div class="row"><label>房间密码</label><input id="create-pwd" placeholder="留空=无密码" type="password"></div>
+    <div class="row"><button onclick="createRoom()">创建房间</button></div>
+  </div>
+  <div class="panel">
+    <h2>加入 / 观战</h2>
+    <div class="row"><label>你的名字</label><input id="join-name" value="玩家2"></div>
+    <div class="row"><label>房间码</label><input id="join-code" placeholder="6位房间码" style="text-transform:uppercase"></div>
+    <div class="row"><label>密码</label><input id="join-pwd" placeholder="无密码留空" type="password"></div>
+    <div class="row">
+      <button onclick="joinRoom(false)">加入游戏</button>
+      <button class="secondary" onclick="joinRoom(true)">观战</button>
+    </div>
+  </div>
+  <div id="error-msg"></div>
+</div>
+
+<!-- 等待开始 -->
+<div id="room-waiting" class="hidden">
+  <div class="panel">
+    <h2>房间 <span id="room-code-display" style="color:#f0c040"></span>
+      <span id="room-pwd-hint" style="color:#888;font-size:.85rem;margin-left:.5rem"></span>
+    </h2>
+    <p style="color:#aaa;margin-bottom:.5rem">等待其他玩家加入，房间满员后自动开始游戏。</p>
+    <div id="player-list"></div>
+  </div>
+</div>
+
+<!-- 游戏界面 -->
+<div id="game-wrap">
+  <div id="game-container"></div>
+  <div id="log-panel"></div>
+</div>
+
+<script src="static/lobby.js"></script>
+<script src="static/games/manila.js"></script>
+</body>
+</html>
