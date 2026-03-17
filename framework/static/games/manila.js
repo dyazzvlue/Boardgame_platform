@@ -274,7 +274,7 @@ class ManilaRenderer {
       d.appendChild(h);
       const row=document.createElement('div'); row.style.cssText='display:flex;gap:.5rem;flex-wrap:wrap';
       const names={nutmeg:'肉豆蔻',silk:'丝绸',ginseng:'人参',jade:'玉'};
-      const prices=(data.market||{}).prices||{}; const bank=(data.market||{}).bank||{};
+      const prices=(data.market||{}).prices||{}; const bank=(data.market||{}).bank_stocks||{};
       Object.entries(prices).forEach(([g,p])=>{
         if (!(bank[g]>0)) return;
         const price=Math.max(p,5);
@@ -340,7 +340,7 @@ class ManilaRenderer {
       ['port','shipyard'].forEach(dest=>{
         const btn=document.createElement('button'); btn.className='secondary';
         btn.textContent=dest==='port'?'港口':'造船厂';
-        btn.onclick=()=>this.respond('pirate_dest', dest==='port'?13:13);
+        btn.onclick=()=>this.respond('pirate_dest', dest==='port'?data.track_len:0);
         row.appendChild(btn);
       });
       d.appendChild(row);
