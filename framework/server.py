@@ -217,6 +217,7 @@ async def ws_endpoint(ws: WebSocket):
 
 async def _start_game(room, loop):
     room.started = True
+    await _broadcast_room(room)  # 通知所有客户端游戏已开始 → initGameUI
     game_cls = get_game_class(room.game_id)
     game     = game_cls()
     bridge   = NetBridge(room=room, loop=loop)
