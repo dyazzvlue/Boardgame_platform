@@ -6,6 +6,7 @@ if TYPE_CHECKING:
 
 _GAME_MODULES: dict[str, str] = {
     'manila': 'framework.games.manila.plugin',
+    'avalon': 'framework.games.avalon.plugin',
 }
 _cache: dict[str, type] = {}
 
