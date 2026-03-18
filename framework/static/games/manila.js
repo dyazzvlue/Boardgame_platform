@@ -78,8 +78,9 @@ class ManilaRenderer {
       cx.fillStyle = colors[g]||'#aaa'; cx.font='12px sans-serif';
       cx.fillText(names[g], TRACK_X+2, y+12);
       if (!ship) return;
-      // 船身
-      const sx = TRACK_X + ship.position * (TRACK_W/13);
+      // 船身（clamp 保证 position=0 时完整可见）
+      const rawSx = TRACK_X + ship.position * (TRACK_W/13);
+      const sx    = Math.max(TRACK_X + 14, Math.min(rawSx, TRACK_X + TRACK_W - 14));
       cx.fillStyle = ship.docked_at ? '#888' : (colors[g]||'#aaa');
       cx.fillRect(sx-14, y+15, 28, 30);
       cx.fillStyle='#fff'; cx.font='10px sans-serif';

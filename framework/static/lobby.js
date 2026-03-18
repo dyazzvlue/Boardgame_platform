@@ -206,10 +206,25 @@ function initGameUI(gameId) {
 }
 
 /* ── 日志 ───────────────────────────────────────────────────────────────── */
+function _autoStyle(text, explicitStyle) {
+  if (explicitStyle && explicitStyle !== 'normal') return explicitStyle;
+  // 自动给常见格式分配样式
+  if (/^──/.test(text) || /^▌/.test(text) || /^►/.test(text)) return 'section';
+  if (/^\s*第\s*\d+\s*轮/.test(text))                           return 'header';
+  if (/^\s*──\s*第\d+次出海/.test(text))                         return 'section';
+  if (/掷骰子|骰子/.test(text))                                  return 'dice';
+  if (/港务长|竞拍|竞价|bid/.test(text))                          return 'bid';
+  if (/部署|工人|派遣/.test(text))                                return 'deploy';
+  if (/利润|收益|入账|港口结算|造船厂结算/.test(text))              return 'profit';
+  if (/⚠|warn|警告|断线|异常/.test(text))                        return 'warn';
+  if (/AI|🤖/.test(text))                                        return 'ai';
+  return explicitStyle || 'normal';
+}
+
 function appendLog(text, style) {
   const panel = document.getElementById('log-panel');
   const div = document.createElement('div');
-  div.className = `log-${style || 'normal'}`;
+  div.className = `log-${_autoStyle(text, style)}`;
   div.textContent = text;
   panel.appendChild(div);
   if (panel.children.length > 300) panel.removeChild(panel.firstChild);
