@@ -6,6 +6,7 @@ let selectedGame = null;
 let currentRoom = null;
 let gameRenderer = null; // 由各 game.js 注册
 let _countdownTimer = null;
+let _gamesData = []; // 缓存游戏列表
 
 /* ── 连接 ──────────────────────────────────────────────────────────────── */
 function connect() {
@@ -43,7 +44,21 @@ function handleMsg(msg) {
 }
 
 /* ── 游戏列表 ───────────────────────────────────────────────────────────── */
+function _updateCountSelect(min, max) {
+  const sel = document.getElementById('create-count');
+  if (!sel) return;
+  const cur = parseInt(sel.value) || min;
+  sel.innerHTML = '';
+  for (let i = min; i <= max; i++) {
+    const opt = document.createElement('option');
+    opt.value = i; opt.textContent = i;
+    if (i === cur || (cur < min && i === min)) opt.selected = true;
+    sel.appendChild(opt);
+  }
+}
+
 function renderGameList(games) {
+  _gamesData = games;
   const el = document.getElementById('game-list');
   el.innerHTML = '';
   games.forEach(g => {
@@ -54,12 +69,14 @@ function renderGameList(games) {
       selectedGame = g.id;
       document.querySelectorAll('.game-card').forEach(c => c.classList.remove('selected'));
       div.classList.add('selected');
+      _updateCountSelect(g.min_players, g.max_players);
     };
     el.appendChild(div);
   });
   if (games.length && !selectedGame) {
     selectedGame = games[0].id;
     el.querySelector('.game-card').classList.add('selected');
+    _updateCountSelect(games[0].min_players, games[0].max_players);
   }
 }
 
@@ -197,9 +214,11 @@ function initGameUI(gameId) {
   document.getElementById('log-panel').innerHTML = '';
   const container = document.getElementById('game-container');
   container.innerHTML = '';
+  const respond = (kind, value) => ws.send(JSON.stringify({type: 'response', kind, value}));
   if (gameId === 'manila') {
-    gameRenderer = new ManilaRenderer(container, myIdx,
-      (kind, value) => ws.send(JSON.stringify({type: 'response', kind, value})));
+    gameRenderer = new ManilaRenderer(container, myIdx, respond);
+  } else if (gameId === 'avalon') {
+    gameRenderer = new AvalonRenderer(container, myIdx, respond);
   } else {
     container.textContent = `游戏 ${gameId} 的渲染器尚未实现`;
   }
