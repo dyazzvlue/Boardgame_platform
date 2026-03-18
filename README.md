@@ -2,6 +2,9 @@
 
 泛用多人联机桌游平台框架。通过 WebSocket 支持多玩家实时联机，游戏逻辑以插件形式接入，框架本身不感知任何游戏细节。
 
+> **本仓库**：[https://github.com/dyazzvlue/Boardgame_platform](https://github.com/dyazzvlue/Boardgame_platform)  
+> **马尼拉游戏仓库**：[https://github.com/dyazzvlue/Boardgame_manila](https://github.com/dyazzvlue/Boardgame_manila)
+
 ---
 
 ## 目录
@@ -40,8 +43,22 @@ pip install -e .
 
 ### 启动服务器
 
+**推荐使用 `tools/` 目录下的脚本**（Manila 与本仓库在同级目录时自动推断路径）：
+
 ```bash
-# MANILA_PATH 指向 Manila 游戏目录（绝对路径）
+# 生产模式（对外开放，端口 8000）
+bash tools/start.sh
+
+# 自定义端口
+bash tools/start.sh --port 9000
+
+# 手动指定 Manila 路径
+MANILA_PATH=/path/to/Manila bash tools/start.sh
+```
+
+也可直接调用 uvicorn：
+
+```bash
 MANILA_PATH=/path/to/Manila uvicorn framework.server:app --host 0.0.0.0 --port 8000
 ```
 
@@ -50,7 +67,11 @@ MANILA_PATH=/path/to/Manila uvicorn framework.server:app --host 0.0.0.0 --port 8
 ### 本地开发
 
 ```bash
-MANILA_PATH=/home/pzy/Documents/Personal/Manila uvicorn framework.server:app --reload --port 8000
+# 热重载，仅绑定 localhost
+bash tools/dev.sh
+
+# 等价于：
+MANILA_PATH=../Manila uvicorn framework.server:app --reload --host 127.0.0.1 --port 8000
 ```
 
 ---
@@ -60,6 +81,9 @@ MANILA_PATH=/home/pzy/Documents/Personal/Manila uvicorn framework.server:app --r
 ```
 gameplatform/
 ├── pyproject.toml                      # 包声明与依赖
+├── tools/
+│   ├── start.sh                        # 快速启动脚本（生产模式）
+│   └── dev.sh                          # 开发模式启动（--reload）
 └── framework/
     ├── __init__.py
     ├── core/                           # 抽象接口层（不含任何游戏逻辑）
@@ -237,7 +261,7 @@ class MyGameRenderer {
 
 ## 接入游戏列表
 
-| 游戏 | GAME_ID | 人数 | 状态 |
-|------|---------|------|------|
-| 马尼拉 | `manila` | 3–5 | ✅ 已接入 |
-| c_g 卡牌 | `cards` | TBD | 🔲 规划中 |
+| 游戏 | GAME_ID | 人数 | 状态 | 仓库 |
+|------|---------|------|------|------|
+| 马尼拉 | `manila` | 3–5 | ✅ 已接入 | [Boardgame_manila](https://github.com/dyazzvlue/Boardgame_manila) |
+| c_g 卡牌 | `cards` | TBD | 🔲 规划中 | — |
