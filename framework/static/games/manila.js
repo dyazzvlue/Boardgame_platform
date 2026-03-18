@@ -58,11 +58,12 @@ class ManilaRenderer {
 
   _drawShips(cx, s) {
     const TRACK_W = 560, TRACK_X = 10, SHIP_Y = 40;
-    const goods = ['nutmeg','silk','ginseng','jade'];
     const colors = {nutmeg:'#b87333',silk:'#4488cc',ginseng:'#d4b800',jade:'#3cb371'};
     const names  = {nutmeg:'肉豆蔻',silk:'丝绸',ginseng:'人参',jade:'玉'};
+    // 只显示本轮参与运输的货船（active_goods）
+    const activeGoods = s.active_goods || ['nutmeg','silk','ginseng','jade'];
 
-    goods.forEach((g, i) => {
+    activeGoods.forEach((g, i) => {
       const ship = (s.ships||{})[g];
       const y = SHIP_Y + i * 72;
       // 轨道
@@ -238,15 +239,19 @@ class ManilaRenderer {
       d.appendChild(h);
       const names={nutmeg:'肉豆蔻',silk:'丝绸',ginseng:'人参',jade:'玉'};
       const row=document.createElement('div'); row.style.cssText='display:flex;gap:.4rem;flex-wrap:wrap';
-      // 货船槽
-      Object.entries(data.ships||{}).forEach(([g, ship])=>{
-        (ship.slots||[]).forEach((slot,si)=>{
-          if (slot.worker) return;
-          const btn=document.createElement('button'); btn.className='secondary';
-          btn.textContent=`${names[g]||g} 槽${si+1}(¥${slot.cost})`;
-          btn.onclick=()=>this.respond('deploy', {type:'ship', good:g, slot:si});
-          row.appendChild(btn);
-        });
+      // 货船槽：只显示 active_goods 中的船，且每船只展示第一个可放置的空槽
+      const activeGoods = data.active_goods || Object.keys(data.ships||{});
+      activeGoods.forEach(g=>{
+        const ship = (data.ships||{})[g];
+        if (!ship) return;
+        // 找第一个空槽（必须从槽0开始连续放）
+        const firstEmpty = (ship.slots||[]).findIndex(slot => !slot.worker);
+        if (firstEmpty === -1) return;  // 全满，跳过
+        const slot = ship.slots[firstEmpty];
+        const btn=document.createElement('button'); btn.className='secondary';
+        btn.textContent=`${names[g]||g} 槽${firstEmpty+1}(¥${slot.cost})`;
+        btn.onclick=()=>this.respond('deploy', {type:'ship', good:g, slot:firstEmpty});
+        row.appendChild(btn);
       });
       // 棋盘位置
       const board=data.board||{};
