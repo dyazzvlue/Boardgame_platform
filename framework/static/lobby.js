@@ -253,6 +253,7 @@ function appendLog(text, style) {
 
 /* ── 离开游戏 ──────────────────────────────────────────────────────────── */
 function leaveGame() {
+  if (!confirm('确认离开游戏？你的位置将由 AI 接管。')) return;
   ws.send(JSON.stringify({type: 'leave_game'}));
   _clearTurnTimer();
   gameRenderer = null;
@@ -265,16 +266,18 @@ let _turnTimerInterval = null;
 function _startTurnTimer(playerIdx, timeoutSecs) {
   _clearTurnTimer();
   const timerEl = document.getElementById('turn-timer');
+  if (!timerEl) return;
+  if (!timeoutSecs || timeoutSecs <= 0) {
     const playerName = _getPlayerName(playerIdx);
-    timerEl.textContent = playerName ?  : '';
+    timerEl.textContent = playerName ? '⏳ ' + playerName + ' 的回合' : '';
     timerEl.style.color = '#f39c12';
     return;
   }
   const playerName = _getPlayerName(playerIdx);
   let remaining = timeoutSecs;
   const update = () => {
-    const name = playerName || ;
-    timerEl.textContent = ;
+    const name = playerName || ('玩家' + (playerIdx + 1));
+    timerEl.textContent = '⏳ ' + name + ' 的回合 — 剩余 ' + remaining + 's';
     timerEl.style.color = remaining <= 5 ? '#e74c3c' : '#f39c12';
   };
   update();
@@ -296,6 +299,7 @@ function _clearTurnTimer() {
 }
 
 function _getPlayerName(playerIdx) {
+  if (!currentRoom || !currentRoom.players) return null;
   const p = currentRoom.players.find(p => p.idx === playerIdx);
   return p ? p.name : null;
 }
