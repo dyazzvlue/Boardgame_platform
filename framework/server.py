@@ -205,6 +205,19 @@ async def ws_endpoint(ws: WebSocket):
                     bridge.receive_response(member.player_idx,
                                             data.get('kind', ''), data.get('value'))
 
+            # ── LEAVE_GAME ────────────────────────────────────────────────
+            elif t == MsgType.LEAVE_GAME:
+                if room is None or member is None or member.is_spectator:
+                    continue
+                if not room.started:
+                    continue
+                bridge = getattr(room, '_bridge', None)
+                if bridge:
+                    bridge.handle_leave(member.player_idx)
+                room.remove_member(ws)
+                room = None
+                member = None
+
     except WebSocketDisconnect:
         pass
     finally:

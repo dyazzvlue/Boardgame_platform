@@ -18,11 +18,12 @@ class RoomMember:
     is_ai: bool = False  # True = AI 玩家，无 WS 连接
 
 class Room:
-    def __init__(self, code, game_id, player_count, password=''):
+    def __init__(self, code, game_id, player_count, password='', turn_timeout=30):
         self.code = code
         self.game_id = game_id
         self.player_count = player_count
         self.password = password
+        self.turn_timeout = turn_timeout  # 0 = 不限制
         self.members: list[RoomMember] = []
         self.game_thread = None
         self.started = False
@@ -98,6 +99,7 @@ class Room:
             ],
             'spectators': len(self.spectators),
             'started': self.started,
+            'turn_timeout': self.turn_timeout,
         }
 
 class RoomRegistry:
@@ -105,14 +107,15 @@ class RoomRegistry:
         self._rooms = {}
         self._lock = threading.Lock()
 
-    def create(self, game_id, player_count, password='') -> Room:
+    def create(self, game_id, player_count, password='', turn_timeout=30) -> Room:
         with self._lock:
             while True:
                 code = _gen_code()
                 if code not in self._rooms:
                     break
             room = Room(code=code, game_id=game_id,
-                        player_count=player_count, password=password)
+                        player_count=player_count, password=password,
+                        turn_timeout=turn_timeout)
             self._rooms[code] = room
         return room
 

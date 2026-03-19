@@ -34,10 +34,10 @@ function handleMsg(msg) {
     case 'game_list': renderGameList(msg.games); break;
     case 'room':      handleRoom(msg); break;
     case 'countdown': handleCountdown(msg.seconds); break;
-    case 'state':     gameRenderer && gameRenderer.onState(msg.context); break;
-    case 'request':   gameRenderer && gameRenderer.onRequest(msg.player_idx, msg.kind, msg.data); break;
+    case 'state':     gameRenderer && gameRenderer.onState(msg.context); _clearTurnTimer(); break;
+    case 'request':   gameRenderer && gameRenderer.onRequest(msg.player_idx, msg.kind, msg.data); _startTurnTimer(msg.player_idx, msg.turn_timeout); break;
     case 'log':       appendLog(msg.text, msg.style); break;
-    case 'game_over': gameRenderer && gameRenderer.onGameOver(msg.result); break;
+    case 'game_over': gameRenderer && gameRenderer.onGameOver(msg.result); _clearTurnTimer(); break;
     case 'error':     showError(msg.msg); break;
     case 'pong':      break;
   }
@@ -86,7 +86,8 @@ function createRoom() {
   const name  = document.getElementById('create-name').value.trim() || '玩家';
   const count = parseInt(document.getElementById('create-count').value);
   const pwd   = document.getElementById('create-pwd').value;
-  ws.send(JSON.stringify({type: 'create', game: selectedGame, name, player_count: count, password: pwd}));
+  const timeout = parseInt(document.getElementById('create-timeout').value);
+  ws.send(JSON.stringify({type: 'create', game: selectedGame, name, player_count: count, password: pwd, turn_timeout: timeout}));
 }
 
 function joinRoom(spectate) {
@@ -248,6 +249,55 @@ function appendLog(text, style) {
   panel.appendChild(div);
   if (panel.children.length > 300) panel.removeChild(panel.firstChild);
   panel.scrollTop = panel.scrollHeight;
+}
+
+/* ── 离开游戏 ──────────────────────────────────────────────────────────── */
+function leaveGame() {
+  ws.send(JSON.stringify({type: 'leave_game'}));
+  _clearTurnTimer();
+  gameRenderer = null;
+  showSection('lobby');
+}
+
+/* ── 回合计时器 ─────────────────────────────────────────────────────────── */
+let _turnTimerInterval = null;
+
+function _startTurnTimer(playerIdx, timeoutSecs) {
+  _clearTurnTimer();
+  const timerEl = document.getElementById('turn-timer');
+    const playerName = _getPlayerName(playerIdx);
+    timerEl.textContent = playerName ?  : '';
+    timerEl.style.color = '#f39c12';
+    return;
+  }
+  const playerName = _getPlayerName(playerIdx);
+  let remaining = timeoutSecs;
+  const update = () => {
+    const name = playerName || ;
+    timerEl.textContent = ;
+    timerEl.style.color = remaining <= 5 ? '#e74c3c' : '#f39c12';
+  };
+  update();
+  _turnTimerInterval = setInterval(() => {
+    remaining--;
+    if (remaining <= 0) {
+      _clearTurnTimer();
+      if (timerEl) { timerEl.textContent = '⏱ 超时'; timerEl.style.color = '#e74c3c'; }
+    } else {
+      update();
+    }
+  }, 1000);
+}
+
+function _clearTurnTimer() {
+  if (_turnTimerInterval) { clearInterval(_turnTimerInterval); _turnTimerInterval = null; }
+  const timerEl = document.getElementById('turn-timer');
+  if (timerEl) timerEl.textContent = '';
+}
+
+function _getPlayerName(playerIdx) {
+  const p = currentRoom.players.find(p => p.idx === playerIdx);
+  return p ? p.name : null;
 }
 
 /* ── 工具 ───────────────────────────────────────────────────────────────── */
