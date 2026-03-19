@@ -3,7 +3,8 @@ framework/server.py — FastAPI 服务器入口。
 启动: uvicorn framework.server:app --host 0.0.0.0 --port 8000
 """
 from __future__ import annotations
-import asyncio, json, threading
+import asyncio, json, logging, threading, time
+from collections import deque
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -19,8 +20,17 @@ app = FastAPI(title='GamePlatform')
 _registry = RoomRegistry()
 _STATIC = Path(__file__).parent / 'static'
 
+_logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.WARNING)
+
+MAX_ROOMS = 50              # 全局最大房间数
+_MAX_CONNS_PER_IP = 10      # 每 IP 最多同时在线连接数
+_MAX_CREATES_PER_MIN = 5    # 每 IP 每分钟最多创建房间数
+_ip_connections: dict = {}  # ip -> 当前在线连接数
+_ip_creates: dict = {}      # ip -> deque of create timestamps
+
 if _STATIC.exists():
-    app.mount('/static', StaticFiles(directory=str(_STATIC), html=True), name='static')
+    app.mount('/static', StaticFiles(directory=str(_STATIC), html=False), name='static')
 
 @app.get('/')
 async def index():
@@ -81,6 +91,12 @@ async def _trigger_full(room, loop):
 @app.websocket('/ws')
 async def ws_endpoint(ws: WebSocket):
     await ws.accept()
+    client_ip = ws.client.host
+    _ip_connections[client_ip] = _ip_connections.get(client_ip, 0) + 1
+    if _ip_connections[client_ip] > _MAX_CONNS_PER_IP:
+        _ip_connections[client_ip] -= 1
+        await ws.close(code=1008, reason='连接数超限')
+        return
     loop = asyncio.get_event_loop()
     room = None
     member = None
@@ -113,33 +129,62 @@ async def ws_endpoint(ws: WebSocket):
 
             # ── CREATE ────────────────────────────────────────────────────
             elif t == MsgType.CREATE:
-                gid     = data.get('game', '')
-                count   = int(data.get('player_count', 4))
-                pwd     = data.get('password', '')
-                name    = data.get('name', 'Player')
-                timeout = int(data.get('turn_timeout', 30))
+                gid  = str(data.get('game', ''))[:32]
+                name = str(data.get('name', 'Player')).strip()[:20]
+                pwd  = str(data.get('password', ''))[:64]
+                try:
+                    count = int(data.get('player_count', 4))
+                    if not (2 <= count <= 10):
+                        raise ValueError
+                except (ValueError, TypeError):
+                    await err(ErrorCode.INVALID_MSG, 'player_count 须为 2-10 的整数')
+                    continue
+                try:
+                    timeout = int(data.get('turn_timeout', 30))
+                    if not (0 <= timeout <= 600):
+                        raise ValueError
+                except (ValueError, TypeError):
+                    await err(ErrorCode.INVALID_MSG, 'turn_timeout 须为 0-600 秒')
+                    continue
+                if not name:
+                    await err(ErrorCode.INVALID_MSG, '玩家名不能为空')
+                    continue
+                if len(_registry._rooms) >= MAX_ROOMS:
+                    await err(ErrorCode.INVALID_MSG, '服务器房间数已达上限，请稍后再试')
+                    continue
+                now = time.monotonic()
+                creates = _ip_creates.setdefault(client_ip, deque())
+                while creates and now - creates[0] > 60:
+                    creates.popleft()
+                if len(creates) >= _MAX_CREATES_PER_MIN:
+                    await err(ErrorCode.INVALID_MSG, '创建太频繁，请稍后再试')
+                    continue
+                creates.append(now)
                 try:
                     get_game_class(gid)
                 except ValueError as e:
                     await err(ErrorCode.INVALID_MSG, str(e))
                     continue
                 room   = _registry.create(gid, count, pwd, turn_timeout=timeout)
-                member = room.add_player(ws, name)   # 创建者自动成为房主
+                member = room.add_player(ws, name)
                 await send({'type': MsgType.ROOM, **room.to_dict(),
                             'your_idx': member.player_idx})
 
             # ── JOIN ──────────────────────────────────────────────────────
             elif t == MsgType.JOIN:
-                code     = data.get('room', '').upper()
-                name     = data.get('name', 'Player')
-                pwd      = data.get('password', '')
+                code     = str(data.get('room', '')).upper()[:6]
+                name     = str(data.get('name', 'Player')).strip()[:20]
+                pwd      = str(data.get('password', ''))[:64]
                 spectate = bool(data.get('spectate', False))
+                if not name:
+                    await err(ErrorCode.INVALID_MSG, '玩家名不能为空')
+                    continue
 
                 room = _registry.get(code)
                 if room is None:
                     await err(ErrorCode.ROOM_NOT_FOUND, f'房间 {code} 不存在')
                     room = None; continue
-                if room.password and room.password != pwd:
+                if not room.check_password(pwd):
                     await err(ErrorCode.WRONG_PASSWORD, '密码错误')
                     room = None; continue
                 if not spectate and room.is_full():
@@ -222,6 +267,7 @@ async def ws_endpoint(ws: WebSocket):
     except WebSocketDisconnect:
         pass
     finally:
+        _ip_connections[client_ip] = max(0, _ip_connections.get(client_ip, 0) - 1)
         if room and member:
             room.remove_member(ws)
             bridge = getattr(room, '_bridge', None)
@@ -253,7 +299,9 @@ async def _start_game(room, loop):
 
     def _run():
         try: game.run()
-        except Exception as e: bridge.log(f'⚠ 游戏异常: {e}', 'warn')
+        except Exception:
+            _logger.exception('游戏线程崩溃 room=%s', room.code)
+            bridge.log('⚠ 游戏遇到意外错误，请联系管理员', 'warn')
 
     t = threading.Thread(target=_run, daemon=True)
     room.game_thread = t

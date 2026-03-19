@@ -29,6 +29,8 @@ for pkg in uvicorn fastapi; do
 done
 if python3 -c "import websockets" 2>/dev/null; then ok "websockets 已安装"
 else echo "  [WARN] websockets 未安装, 跳过 WS 测试"; WS_SKIP=1; fi
+if python3 -c "import bcrypt" 2>/dev/null; then ok "bcrypt 已安装"
+else fail "bcrypt 未安装 (pip install bcrypt)"; fi
 
 # ── 2. 游戏目录 ────────────────────────────────────────────────────────────────
 echo ""

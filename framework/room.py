@@ -1,5 +1,7 @@
 from __future__ import annotations
 import random, string, threading
+import bcrypt
+import bcrypt
 from dataclasses import dataclass, field
 from typing import Optional, TYPE_CHECKING
 if TYPE_CHECKING:
@@ -22,7 +24,9 @@ class Room:
         self.code = code
         self.game_id = game_id
         self.player_count = player_count
-        self.password = password
+        self._password_hash = (
+            bcrypt.hashpw(password.encode(), bcrypt.gensalt()) if password else None
+        )
         self.turn_timeout = turn_timeout  # 0 = 不限制
         self.members: list[RoomMember] = []
         self.game_thread = None
@@ -55,6 +59,18 @@ class Room:
             m = RoomMember(ws=ws, name=name, player_idx=-1, is_spectator=True)
             self.members.append(m)
         return m
+
+    def check_password(self, pwd: str) -> bool:
+        """密码正确（或无密码）返回 True。"""
+        if self._password_hash is None:
+            return True
+        return bcrypt.checkpw(pwd.encode(), self._password_hash)
+
+    def check_password(self, pwd: str) -> bool:
+        """密码正确（或无密码）返回 True。"""
+        if self._password_hash is None:
+            return True
+        return bcrypt.checkpw(pwd.encode(), self._password_hash)
 
     def remove_member(self, ws) -> Optional[RoomMember]:
         with self._lock:

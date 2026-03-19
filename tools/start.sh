@@ -7,6 +7,7 @@
 #
 # 游戏路径优先级：环境变量 > games.conf 中声明的 local_dir_name（与 gameplatform 平级）
 # 必须在 gameplatform 根目录或其子目录下运行。
+#   使用 --public 参数才会绑定 0.0.0.0（生产环境应由 Nginx 反代，不需要此参数）。
 
 set -e
 
@@ -19,7 +20,7 @@ GAMES_CONF="$SCRIPT_DIR/games.conf"
 # ── 默认参数 ─────────────────────────────────────────────────────────────────
 PORT=8000
 RELOAD=""
-HOST="0.0.0.0"
+HOST="127.0.0.1"   # 默认仅本地监听，由 Nginx 反代；--public 才绑定 0.0.0.0
 
 # ── 解析参数 ─────────────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
@@ -27,6 +28,7 @@ while [[ $# -gt 0 ]]; do
         --port)    PORT="$2";   shift 2 ;;
         --reload)  RELOAD="--reload"; shift ;;
         --host)    HOST="$2";   shift 2 ;;
+        --public)  HOST="0.0.0.0"; shift ;;  # 直接暴露，仅开发/局域网使用
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
 done
