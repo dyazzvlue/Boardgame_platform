@@ -8,5 +8,6 @@
 | [protocol.md](protocol.md) | WebSocket 消息协议完整参考（类型、字段、流程） |
 | [add-game.md](add-game.md) | 接入新游戏的完整清单与代码模板 |
 | [frontend.md](frontend.md) | 前端 JS 开发规范（渲染器 API、大厅钩子、计时器） |
+| [debugging.md](debugging.md) | 常见问题排查、历史 Bug 记录、快速诊断命令 |
 
 > **根目录**的 `GamePlatfrom_dev_skill.md` 保留为精简速查版，完整内容在此目录。
