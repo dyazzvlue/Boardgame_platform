@@ -1,5 +1,5 @@
 /* lobby.js — 大厅与 WebSocket 核心 */
-const WS_URL = `ws://${location.host}/ws`;
+const WS_URL = `wss://${location.host}/ws`;
 let ws = null;
 let myIdx = -1;
 let selectedGame = null;
