@@ -121,11 +121,13 @@ class MyGameRenderer {
 
 ## 已知限制与待办
 
-- `ask()` 目前不支持超时，断线依赖 WS 关闭事件触发 `_handle_disconnect`
 - 房间在游戏结束后不会自动清理（待添加 `RoomRegistry.remove()` 调用）
 - 观战者加入时不主动推送当前 state，需等下一次 broadcast 才能看到画面（可优化）
 - `manila.js` 的 Canvas 渲染为功能性实现，布局与单机 pygame 版有差异
 - `pirate_dest` 的 "港口/造船厂" 按钮目前均发送 `13`，需根据 track_len 和 docked_at 修正
+
+
+> 详细文档见 `skill/` 目录（architecture / protocol / add-game / frontend）。
 
 ---
 

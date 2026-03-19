@@ -113,16 +113,17 @@ async def ws_endpoint(ws: WebSocket):
 
             # ── CREATE ────────────────────────────────────────────────────
             elif t == MsgType.CREATE:
-                gid   = data.get('game', '')
-                count = int(data.get('player_count', 4))
-                pwd   = data.get('password', '')
-                name  = data.get('name', 'Player')
+                gid     = data.get('game', '')
+                count   = int(data.get('player_count', 4))
+                pwd     = data.get('password', '')
+                name    = data.get('name', 'Player')
+                timeout = int(data.get('turn_timeout', 30))
                 try:
                     get_game_class(gid)
                 except ValueError as e:
                     await err(ErrorCode.INVALID_MSG, str(e))
                     continue
-                room   = _registry.create(gid, count, pwd)
+                room   = _registry.create(gid, count, pwd, turn_timeout=timeout)
                 member = room.add_player(ws, name)   # 创建者自动成为房主
                 await send({'type': MsgType.ROOM, **room.to_dict(),
                             'your_idx': member.player_idx})
