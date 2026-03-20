@@ -62,19 +62,19 @@ while IFS= read -r line; do
         echo "   ↻  已存在，执行 git pull..."
         if git -C "$target" pull --ff-only; then
             echo "   ✔  更新成功"
-            (( ok_count++ ))
+            ok_count=$((ok_count + 1))
         else
             echo "   ⚠  pull 失败（可能有本地修改），跳过"
-            (( fail_count++ ))
+            fail_count=$((fail_count + 1))
         fi
     else
         echo "   ↓  首次克隆..."
         if git clone "$git_url" "$target"; then
             echo "   ✔  克隆成功"
-            (( ok_count++ ))
+            ok_count=$((ok_count + 1))
         else
             echo "   ✘  克隆失败"
-            (( fail_count++ ))
+            fail_count=$((fail_count + 1))
         fi
     fi
     echo ""
