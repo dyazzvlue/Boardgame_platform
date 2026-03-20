@@ -34,6 +34,8 @@ class Room:
         self.host_ws = None            # 房主 WebSocket
         self._countdown_task = None    # 满员自动开始的倒计时 asyncio.Task
         self._lock = threading.Lock()
+        self._restart_votes: set = set()  # player_idx => voted to restart
+        self._game_ended: bool = False    # set True after game_over sent
 
     def add_player(self, ws, name) -> RoomMember:
         with self._lock:
@@ -60,11 +62,19 @@ class Room:
             self.members.append(m)
         return m
 
-    def check_password(self, pwd: str) -> bool:
-        """密码正确（或无密码）返回 True。"""
-        if self._password_hash is None:
-            return True
-        return bcrypt.checkpw(pwd.encode(), self._password_hash)
+    def vote_restart(self, player_idx: int) -> bool:
+        """记录重开投票，返回是否所有在线人类玩家均已投票。"""
+        self._restart_votes.add(player_idx)
+        humans = [m for m in self.players if not m.is_ai and m.connected]
+        return len(humans) > 0 and len(self._restart_votes) >= len(humans)
+
+    def restart_vote_count(self) -> tuple:
+        humans = [m for m in self.players if not m.is_ai and m.connected]
+        return len(self._restart_votes), len(humans)
+
+    def clear_restart_state(self):
+        self._restart_votes.clear()
+        self._game_ended = False
 
     def check_password(self, pwd: str) -> bool:
         """密码正确（或无密码）返回 True。"""
@@ -122,6 +132,8 @@ class RoomRegistry:
     def __init__(self):
         self._rooms = {}
         self._lock = threading.Lock()
+        self._restart_votes: set = set()  # player_idx => voted to restart
+        self._game_ended: bool = False    # set True after game_over sent
 
     def create(self, game_id, player_count, password='', turn_timeout=30) -> Room:
         with self._lock:

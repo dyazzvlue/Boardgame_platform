@@ -18,7 +18,11 @@ class MsgType:
     PING       = "ping"
     ADD_AI     = "add_ai"      # 房主添加 AI
     START_GAME = "start_game"  # 房主手动开始
-    LEAVE_GAME = "leave_game"  # 玩家离开游戏（AI接管）
+    LEAVE_GAME    = "leave_game"    # 玩家离开游戏（AI接管）
+    RESTART_VOTE  = "restart_vote"  # 玩家投票重开游戏
+
+    # Server → Client (restart)
+    RESTART_STATUS = "restart_status"  # {voted, total}
 
 
 class ErrorCode:

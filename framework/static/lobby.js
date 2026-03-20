@@ -37,7 +37,8 @@ function handleMsg(msg) {
     case 'state':     gameRenderer && gameRenderer.onState(msg.context); _clearTurnTimer(); break;
     case 'request':   gameRenderer && gameRenderer.onRequest(msg.player_idx, msg.kind, msg.data); _startTurnTimer(msg.player_idx, msg.turn_timeout); break;
     case 'log':       appendLog(msg.text, msg.style); break;
-    case 'game_over': gameRenderer && gameRenderer.onGameOver(msg.result); _clearTurnTimer(); break;
+    case 'game_over': gameRenderer && gameRenderer.onGameOver(msg.result); _clearTurnTimer(); _showRestartBtn(); break;
+    case 'restart_status': _handleRestartStatus(msg); break;
     case 'error':     showError(msg.msg); break;
     case 'pong':      break;
   }
@@ -211,6 +212,7 @@ function clearCountdownDisplay() {
 
 /* ── 游戏 UI 初始化 ──────────────────────────────────────────────────────── */
 function initGameUI(gameId) {
+  _resetRestartBtn();
   showSection('game-wrap');
   document.getElementById('log-panel').innerHTML = '';
   const container = document.getElementById('game-container');
@@ -254,6 +256,7 @@ function appendLog(text, style) {
 /* ── 离开游戏 ──────────────────────────────────────────────────────────── */
 function leaveGame() {
   if (!confirm('确认离开游戏？你的位置将由 AI 接管。')) return;
+  _resetRestartBtn();
   ws.send(JSON.stringify({type: 'leave_game'}));
   _clearTurnTimer();
   gameRenderer = null;
@@ -316,6 +319,39 @@ function showError(msg) {
   const el = document.getElementById('error-msg');
   if (el) { el.textContent = msg; setTimeout(() => el.textContent = '', 4000); }
   else alert(msg);
+}
+
+/* ── 重开游戏 ───────────────────────────────────────────────────────────── */
+let _restartVoted = false;
+
+function _showRestartBtn() {
+  const btn = document.getElementById('btn-restart-vote');
+  if (btn) { btn.style.display = ''; btn.textContent = '🔄 重新开始'; btn.disabled = false; }
+  _restartVoted = false;
+}
+
+function _resetRestartBtn() {
+  const btn = document.getElementById('btn-restart-vote');
+  if (btn) { btn.style.display = 'none'; btn.textContent = '🔄 重新开始'; btn.disabled = false; }
+  _restartVoted = false;
+}
+
+function voteRestart() {
+  if (_restartVoted) return;
+  _restartVoted = true;
+  const btn = document.getElementById('btn-restart-vote');
+  if (btn) { btn.disabled = true; btn.textContent = '已投票⌛'; }
+  ws.send(JSON.stringify({type: 'restart_vote'}));
+}
+
+function _handleRestartStatus(msg) {
+  const btn = document.getElementById('btn-restart-vote');
+  if (!btn) return;
+  if (!_restartVoted) {
+    btn.textContent = `🔄 重新开始 (${msg.voted}/${msg.total})`;
+  } else {
+    btn.textContent = `已投票 (${msg.voted}/${msg.total})`;
+  }
 }
 
 connect();

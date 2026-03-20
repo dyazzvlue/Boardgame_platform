@@ -264,6 +264,29 @@ async def ws_endpoint(ws: WebSocket):
                 room = None
                 member = None
 
+            # ── RESTART_VOTE ──────────────────────────────────────────────
+            elif t == MsgType.RESTART_VOTE:
+                if room is None or member is None or member.is_spectator:
+                    continue
+                if not room.started or not room._game_ended:
+                    continue
+                all_voted = room.vote_restart(member.player_idx)
+                voted, total = room.restart_vote_count()
+                await _broadcast_raw(room, {
+                    'type': MsgType.RESTART_STATUS,
+                    'voted': voted,
+                    'total': total,
+                })
+                if all_voted:
+                    # 等待游戏线程退出（正常情况下已结束）
+                    gt = getattr(room, 'game_thread', None)
+                    if gt and gt.is_alive():
+                        await asyncio.get_event_loop().run_in_executor(
+                            None, lambda: gt.join(timeout=3)
+                        )
+                    room.clear_restart_state()
+                    await _start_game(room, loop)
+
     except WebSocketDisconnect:
         pass
     finally:
@@ -295,7 +318,11 @@ async def _start_game(room, loop):
         flags.append(False)
 
     game.setup(names, flags)
-    asyncio.create_task(bridge.broadcast_loop())
+    # 取消旧的 broadcast 循环（restart 场景）
+    old_bt = getattr(room, '_broadcast_task', None)
+    if old_bt and not old_bt.done():
+        old_bt.cancel()
+    room._broadcast_task = asyncio.create_task(bridge.broadcast_loop())
 
     def _run():
         try: game.run()

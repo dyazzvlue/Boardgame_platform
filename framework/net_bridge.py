@@ -63,6 +63,7 @@ class NetBridge(AbstractBridge):
                         'context': self._game.get_state()})
 
     def broadcast_game_over(self, result: dict):
+        self._room._game_ended = True
         self._schedule({'type': MsgType.GAME_OVER, 'game_id': self._room.game_id,
                         'result': result})
 

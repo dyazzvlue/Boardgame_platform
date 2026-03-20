@@ -343,6 +343,7 @@ class AvalonRenderer {
 
   onGameOver(result) {
     this._pending = null;
+    this.actionPanel.innerHTML = '';   // 清除残留的操作按钮
     const winner = result.winner;
     const color = winner === "good" ? "#2DB450" : "#C82D37";
     const overlay = this._el("div","","position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:100;");
@@ -364,6 +365,9 @@ class AvalonRenderer {
     const closeBtn = this._mkBtn("关闭", "#2d4678");
     closeBtn.onclick = () => overlay.remove();
     box.appendChild(closeBtn);
+    const restartBtn = this._mkBtn("🔄 重新开始", "#2980b9");
+    restartBtn.onclick = () => { overlay.remove(); if (typeof voteRestart === 'function') voteRestart(); };
+    box.appendChild(restartBtn);
     overlay.appendChild(box);
     this.container.style.position = "relative";
     this.container.appendChild(overlay);
