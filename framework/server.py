@@ -37,6 +37,12 @@ async def index():
     return FileResponse(str(_STATIC / 'index.html'))
 
 
+@app.get('/favicon.ico', include_in_schema=False)
+async def favicon():
+    from fastapi.responses import Response
+    return Response(status_code=204)
+
+
 # ── 广播工具 ──────────────────────────────────────────────────────────────────
 
 async def _broadcast_room(room):

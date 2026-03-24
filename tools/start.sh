@@ -111,4 +111,5 @@ cd "$GP_ROOT"
 exec uvicorn framework.server:app \
     --host "$HOST" \
     --port "$PORT" \
+    --log-level warning \
     $RELOAD

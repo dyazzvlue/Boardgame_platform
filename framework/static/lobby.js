@@ -1,5 +1,5 @@
 /* lobby.js — 大厅与 WebSocket 核心 */
-const WS_URL = `wss://${location.host}/ws`;
+const WS_URL = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
 let ws = null;
 let myIdx = -1;
 let selectedGame = null;
@@ -20,6 +20,7 @@ function connect() {
     startPing();
   };
   ws.onmessage = e => handleMsg(JSON.parse(e.data));
+  ws.onerror = () => {};
   ws.onclose = () => setTimeout(connect, 2000);
 }
 
@@ -64,29 +65,29 @@ function _updateCountSelect(min, max) {
 
 function renderGameList(games) {
   _gamesData = games;
-  const el = document.getElementById('game-list');
-  el.innerHTML = '';
+  const sel = document.getElementById('create-game');
+  if (!sel) return;
+  sel.innerHTML = '';
   games.forEach(g => {
-    const div = document.createElement('div');
-    div.className = 'game-card' + (g.id === selectedGame ? ' selected' : '');
-    div.innerHTML = `<h3>${g.name}</h3><small>${g.min_players}–${g.max_players} 人</small>`;
-    div.onclick = () => {
-      selectedGame = g.id;
-      document.querySelectorAll('.game-card').forEach(c => c.classList.remove('selected'));
-      div.classList.add('selected');
-      _updateCountSelect(g.min_players, g.max_players);
-    };
-    el.appendChild(div);
+    const opt = document.createElement('option');
+    opt.value = g.id;
+    opt.textContent = `${g.name}（${g.min_players}–${g.max_players} 人）`;
+    sel.appendChild(opt);
   });
-  if (games.length && !selectedGame) {
+  if (games.length) {
     selectedGame = games[0].id;
-    el.querySelector('.game-card').classList.add('selected');
     _updateCountSelect(games[0].min_players, games[0].max_players);
   }
+  sel.onchange = () => {
+    const g = _gamesData.find(x => x.id === sel.value);
+    if (g) { selectedGame = g.id; _updateCountSelect(g.min_players, g.max_players); }
+  };
 }
 
 /* ── 创建 / 加入 ────────────────────────────────────────────────────────── */
 function createRoom() {
+  const gameSel = document.getElementById('create-game');
+  if (gameSel) selectedGame = gameSel.value;
   if (!selectedGame) { showError('请先选择游戏'); return; }
   const name  = document.getElementById('create-name').value.trim() || '玩家';
   const count = parseInt(document.getElementById('create-count').value);
