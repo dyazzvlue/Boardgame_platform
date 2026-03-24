@@ -327,6 +327,22 @@ async def ws_endpoint(ws: WebSocket):
                     room.clear_restart_state()
                     await _start_game(room, loop)
 
+            # ── RETURN_ROOM ───────────────────────────────────────────────
+            elif t == MsgType.RETURN_ROOM:
+                if room is None or member is None or member.is_spectator:
+                    continue
+                if not room.started or not room._game_ended:
+                    continue
+                # 取消广播循环
+                old_bt = getattr(room, '_broadcast_task', None)
+                if old_bt and not old_bt.done():
+                    old_bt.cancel()
+                room._broadcast_task = None
+                room.started = False
+                room._bridge = None
+                room.clear_restart_state()
+                await _broadcast_room(room)
+
             # ── SWITCH_GAME ───────────────────────────────────────────────
             elif t == MsgType.SWITCH_GAME:
                 if room is None or member is None or member.is_spectator:

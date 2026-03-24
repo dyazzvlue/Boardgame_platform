@@ -19,7 +19,8 @@ class MsgType:
     ADD_AI     = "add_ai"      # 房主添加 AI
     START_GAME = "start_game"  # 房主手动开始
     LEAVE_GAME    = "leave_game"    # 玩家离开游戏（AI接管）
-    RESTART_VOTE  = "restart_vote"  # 玩家投票重开游戏
+    RESTART_VOTE  = "restart_vote"  # 玩家投票重开游戏（旧，保留兼容）
+    RETURN_ROOM   = "return_room"   # 任意玩家：结束后返回等待室
     CHANGE_GAME   = "change_game"   # 房主在等待室更换游戏（未开始）
     SWITCH_GAME   = "switch_game"   # 房主切换游戏（不投票）
 

@@ -365,9 +365,6 @@ class AvalonRenderer {
     const closeBtn = this._mkBtn("关闭", "#2d4678");
     closeBtn.onclick = () => overlay.remove();
     box.appendChild(closeBtn);
-    const restartBtn = this._mkBtn("🔄 重新开始", "#2980b9");
-    restartBtn.onclick = () => { overlay.remove(); if (typeof voteRestart === 'function') voteRestart(); };
-    box.appendChild(restartBtn);
     overlay.appendChild(box);
     this.container.style.position = "relative";
     this.container.appendChild(overlay);

@@ -42,8 +42,7 @@ function handleMsg(msg) {
     case 'state':     if (_gameLoading) { _msgQueue.push(msg); break; } gameRenderer && gameRenderer.onState(msg.context); _clearTurnTimer(); break;
     case 'request':   if (_gameLoading) { _msgQueue.push(msg); break; } gameRenderer && gameRenderer.onRequest(msg.player_idx, msg.kind, msg.data); _startTurnTimer(msg.player_idx, msg.turn_timeout); break;
     case 'log':       appendLog(msg.text, msg.style); break;
-    case 'game_over': if (_gameLoading) { _msgQueue.push(msg); break; } gameRenderer && gameRenderer.onGameOver(msg.result); _clearTurnTimer(); _showRestartBtn(); break;
-    case 'restart_status': _handleRestartStatus(msg); break;
+    case 'game_over': if (_gameLoading) { _msgQueue.push(msg); break; } gameRenderer && gameRenderer.onGameOver(msg.result); _clearTurnTimer(); _showPostGameBtns(); break;
     case 'error':     showError(msg.msg); break;
     case 'pong':      break;
   }
@@ -95,6 +94,8 @@ function handleRoom(msg) {
   // 收到新房间状态时，若有倒计时 banner 存在但 msg 显示不满员则清除
   if (!msg.started) {
     if (msg.game_id) _loadGameScript(msg.game_id); // 预加载，静默忽略失败
+    _resetPostGameBtns();
+    gameRenderer = null;
     showSection('room-waiting');
     document.getElementById('room-code-display').textContent = msg.code;
     const hint = msg.password ? '🔒 有密码' : '';
@@ -283,7 +284,7 @@ function _loadGameScript(gameId) {
 
 /* ── 游戏 UI 初始化 ──────────────────────────────────────────────────────── */
 async function initGameUI(gameId) {
-  _resetRestartBtn();
+  _resetPostGameBtns();
   _gameLoading = true;
   _msgQueue = [];
   showSection('game-wrap');
@@ -341,8 +342,8 @@ function appendLog(text, style) {
 
 /* ── 离开游戏 ──────────────────────────────────────────────────────────── */
 function leaveGame() {
-  if (!confirm('确认离开游戏？你的位置将由 AI 接管。')) return;
-  _resetRestartBtn();
+  if (!confirm('确认退出游戏？')) return;
+  _resetPostGameBtns();
   _gameLoading = false;
   _msgQueue = [];
   ws.send(JSON.stringify({type: 'leave_game'}));
@@ -409,60 +410,20 @@ function showError(msg) {
   else alert(msg);
 }
 
-/* ── 重开游戏 ───────────────────────────────────────────────────────────── */
-let _restartVoted = false;
-
-function _showRestartBtn() {
-  const btn = document.getElementById('btn-restart-vote');
-  if (btn) { btn.style.display = ''; btn.textContent = '🔄 重新开始'; btn.disabled = false; }
-  _restartVoted = false;
-  // 切换游戏栏：仅房主可见
-  const bar = document.getElementById('switch-game-bar');
-  if (bar && currentRoom && myIdx === currentRoom.host_idx) {
-    const sel = document.getElementById('switch-game-select');
-    if (sel) {
-      sel.innerHTML = '';
-      _gamesData.forEach(g => {
-        const opt = document.createElement('option');
-        opt.value = g.id;
-        opt.textContent = `${g.name}（${g.min_players}–${g.max_players}人）`;
-        sel.appendChild(opt);
-      });
-    }
-    bar.style.display = 'flex';
-  }
+/* ── 游戏结束后操作 ──────────────────────────────────────────────────────── */
+function _showPostGameBtns() {
+  const btn = document.getElementById('btn-return-room');
+  if (btn) btn.style.display = '';
 }
 
-function _resetRestartBtn() {
-  const btn = document.getElementById('btn-restart-vote');
-  if (btn) { btn.style.display = 'none'; btn.textContent = '🔄 重新开始'; btn.disabled = false; }
-  _restartVoted = false;
-  const bar = document.getElementById('switch-game-bar');
-  if (bar) bar.style.display = 'none';
+function _resetPostGameBtns() {
+  const btn = document.getElementById('btn-return-room');
+  if (btn) btn.style.display = 'none';
 }
 
-function voteRestart() {
-  if (_restartVoted) return;
-  _restartVoted = true;
-  const btn = document.getElementById('btn-restart-vote');
-  if (btn) { btn.disabled = true; btn.textContent = '已投票⌛'; }
-  ws.send(JSON.stringify({type: 'restart_vote'}));
-}
-
-function switchGame() {
-  const sel = document.getElementById('switch-game-select');
-  if (!sel || !sel.value) return;
-  ws.send(JSON.stringify({type: 'switch_game', game_id: sel.value}));
-}
-
-function _handleRestartStatus(msg) {
-  const btn = document.getElementById('btn-restart-vote');
-  if (!btn) return;
-  if (!_restartVoted) {
-    btn.textContent = `🔄 重新开始 (${msg.voted}/${msg.total})`;
-  } else {
-    btn.textContent = `已投票 (${msg.voted}/${msg.total})`;
-  }
+function returnToRoom() {
+  ws.send(JSON.stringify({type: 'return_room'}));
+  // 服务端会广播 room(started=false)，handleRoom 会切换到等待室
 }
 
 connect();
