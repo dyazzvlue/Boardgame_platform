@@ -262,24 +262,22 @@ async def ws_endpoint(ws: WebSocket):
                     await err(ErrorCode.INVALID_MSG, '未知游戏')
                     continue
                 gi = ginfo_map[new_gid]
-                if not (gi['min_players'] <= room.player_count <= gi['max_players']):
+                # 先确定新人数：客户端发来的 player_count 优先，否则沿用当前值
+                # 若当前值不在新游戏范围内则自动夹到边界
+                try:
+                    req_count = int(data.get('player_count', room.player_count))
+                except (ValueError, TypeError):
+                    req_count = room.player_count
+                new_count = max(gi['min_players'],
+                                min(gi['max_players'], req_count))
+                new_count = max(new_count, len(room.players))  # 不低于已有玩家数
+                if new_count > gi['max_players']:
                     await err(ErrorCode.INVALID_MSG,
-                              f'当前人数 {room.player_count} 不适合游戏 {gi["name"]}'
-                              f'（需要 {gi["min_players"]}–{gi["max_players"]} 人）')
+                              f'当前玩家数 {len(room.players)} 超过游戏 {gi["name"]}'
+                              f' 上限 {gi["max_players"]} 人')
                     continue
                 room.game_id = new_gid
-                # 可选地同时更新人数
-                new_count = data.get('player_count')
-                if new_count is not None:
-                    try:
-                        new_count = int(new_count)
-                        if not (gi['min_players'] <= new_count <= gi['max_players']):
-                            raise ValueError
-                        if new_count < len(room.players):
-                            new_count = len(room.players)  # 不允许低于已有玩家数
-                        room.player_count = new_count
-                    except (ValueError, TypeError):
-                        pass  # 忽略无效的 player_count
+                room.player_count = new_count
                 await _broadcast_room(room)
 
             # ── RESPONSE ──────────────────────────────────────────────────
