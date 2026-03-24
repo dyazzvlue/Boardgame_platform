@@ -256,7 +256,7 @@ async def ws_endpoint(ws: WebSocket):
                     continue
                 if room.started:
                     continue
-                new_gid = str(msg.get('game_id', ''))[:32]
+                new_gid = str(data.get('game_id', ''))[:32]
                 ginfo_map = {g['id']: g for g in list_games()}
                 if new_gid not in ginfo_map:
                     await err(ErrorCode.INVALID_MSG, '未知游戏')
@@ -340,7 +340,7 @@ async def ws_endpoint(ws: WebSocket):
                                      'msg': '只有房主可以切换游戏',
                                      'code': ErrorCode.FORBIDDEN})
                     continue
-                new_game_id = str(msg.get('game_id', ''))
+                new_game_id = str(data.get('game_id', ''))
                 games_index = {g['id']: g for g in list_games()}
                 if new_game_id not in games_index:
                     await _send(ws, {'type': MsgType.ERROR,
