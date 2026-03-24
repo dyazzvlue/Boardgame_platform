@@ -73,11 +73,11 @@ function renderGameList(games) {
 /* ── 创建 / 加入 ────────────────────────────────────────────────────────── */
 function createRoom() {
   if (!selectedGame) { showError('请先选择游戏'); return; }
-  const name  = document.getElementById('create-name').value.trim() || '玩家';
-  const count = parseInt(document.getElementById('create-count').value);
-  const pwd   = document.getElementById('create-pwd').value;
+  const name    = document.getElementById('create-name').value.trim() || '玩家';
+  const pwd     = document.getElementById('create-pwd').value;
   const timeout = parseInt(document.getElementById('create-timeout').value);
-  ws.send(JSON.stringify({type: 'create', game: selectedGame, name, player_count: count, password: pwd, turn_timeout: timeout}));
+  // player_count 默认由服务端取游戏 min_players，在等待室可调整
+  ws.send(JSON.stringify({type: 'create', game: selectedGame, name, password: pwd, turn_timeout: timeout}));
 }
 
 function joinRoom(spectate) {
@@ -162,22 +162,38 @@ function renderHostControls(msg) {
 
   if (!isHost) return;  // 非房主：不显示控制按钮
 
-  // 游戏选择器
-  if (!msg.started && _gamesData.length > 1) {
-    const gameSel = document.createElement('select');
-    gameSel.style.cssText = 'background:#0f3460;color:#eee;border:1px solid #444;padding:.4rem .6rem;border-radius:6px;';
-    _gamesData.forEach(g => {
+  // 游戏选择器 + 人数选择器
+  if (!msg.started) {
+    // 游戏下拉（游戏数 > 1 才显示）
+    if (_gamesData.length > 1) {
+      const gameSel = document.createElement('select');
+      gameSel.id = 'host-game-sel';
+      gameSel.style.cssText = 'background:#0f3460;color:#eee;border:1px solid #444;padding:.4rem .6rem;border-radius:6px;';
+      _gamesData.forEach(g => {
+        const opt = document.createElement('option');
+        opt.value = g.id;
+        opt.textContent = g.name;
+        if (g.id === msg.game_id) opt.selected = true;
+        gameSel.appendChild(opt);
+      });
+      gameSel.onchange = () => _syncGameCount();
+      ctrl.appendChild(gameSel);
+    }
+
+    // 人数下拉（始终显示）
+    const countSel = document.createElement('select');
+    countSel.id = 'host-count-sel';
+    countSel.style.cssText = 'background:#0f3460;color:#eee;border:1px solid #444;padding:.4rem .6rem;border-radius:6px;width:4.5rem;';
+    const curGame = _gamesData.find(g => g.id === msg.game_id) || {};
+    const minP = curGame.min_players || 2, maxP = curGame.max_players || 10;
+    for (let i = minP; i <= maxP; i++) {
       const opt = document.createElement('option');
-      opt.value = g.id;
-      opt.textContent = `${g.name}（${g.min_players}–${g.max_players}人）`;
-      if (g.id === msg.game_id) opt.selected = true;
-      gameSel.appendChild(opt);
-    });
-    gameSel.onchange = () => {
-      ws.send(JSON.stringify({type: 'change_game', game_id: gameSel.value}));
-      _loadGameScript(gameSel.value); // 立即开始预加载
-    };
-    ctrl.appendChild(gameSel);
+      opt.value = i; opt.textContent = i + ' 人';
+      if (i === msg.player_count) opt.selected = true;
+      countSel.appendChild(opt);
+    }
+    countSel.onchange = () => _syncGameCount();
+    ctrl.appendChild(countSel);
   }
 
   // 添加 AI 按钮（房间未满且游戏未开始）
@@ -200,6 +216,30 @@ function renderHostControls(msg) {
     };
     ctrl.appendChild(btnStart);
   }
+}
+
+function _syncGameCount() {
+  const gameSel  = document.getElementById('host-game-sel');
+  const countSel = document.getElementById('host-count-sel');
+  const gameId = gameSel ? gameSel.value : (currentRoom && currentRoom.game_id);
+  const count  = countSel ? parseInt(countSel.value) : undefined;
+  if (!gameId) return;
+  // rebuild count options if game changed
+  if (gameSel && countSel) {
+    const g = _gamesData.find(x => x.id === gameId);
+    if (g) {
+      const cur = parseInt(countSel.value) || g.min_players;
+      countSel.innerHTML = '';
+      for (let i = g.min_players; i <= g.max_players; i++) {
+        const opt = document.createElement('option');
+        opt.value = i; opt.textContent = i + ' 人';
+        opt.selected = (i === Math.max(g.min_players, Math.min(g.max_players, cur)));
+        countSel.appendChild(opt);
+      }
+      _loadGameScript(gameId); // 预加载
+    }
+  }
+  ws.send(JSON.stringify({type: 'change_game', game_id: gameId, player_count: parseInt(countSel ? countSel.value : count)}));
 }
 
 /* ── 倒计时 ──────────────────────────────────────────────────────────────── */

@@ -138,12 +138,18 @@ async def ws_endpoint(ws: WebSocket):
                 gid  = str(data.get('game', ''))[:32]
                 name = str(data.get('name', 'Player')).strip()[:20]
                 pwd  = str(data.get('password', ''))[:64]
+                ginfo_map = {g['id']: g for g in list_games()}
+                if gid not in ginfo_map:
+                    await err(ErrorCode.INVALID_MSG, f'未知游戏 {gid!r}')
+                    continue
+                gi = ginfo_map[gid]
                 try:
-                    count = int(data.get('player_count', 4))
-                    if not (2 <= count <= 10):
+                    count = int(data.get('player_count', gi['min_players']))
+                    if not (gi['min_players'] <= count <= gi['max_players']):
                         raise ValueError
                 except (ValueError, TypeError):
-                    await err(ErrorCode.INVALID_MSG, 'player_count 须为 2-10 的整数')
+                    await err(ErrorCode.INVALID_MSG,
+                              f'游戏 {gi["name"]} 需要 {gi["min_players"]}–{gi["max_players"]} 人')
                     continue
                 try:
                     timeout = int(data.get('turn_timeout', 30))
@@ -166,11 +172,6 @@ async def ws_endpoint(ws: WebSocket):
                     await err(ErrorCode.INVALID_MSG, '创建太频繁，请稍后再试')
                     continue
                 creates.append(now)
-                try:
-                    get_game_class(gid)
-                except ValueError as e:
-                    await err(ErrorCode.INVALID_MSG, str(e))
-                    continue
                 room   = _registry.create(gid, count, pwd, turn_timeout=timeout)
                 member = room.add_player(ws, name)
                 await send({'type': MsgType.ROOM, **room.to_dict(),
@@ -267,6 +268,18 @@ async def ws_endpoint(ws: WebSocket):
                               f'（需要 {gi["min_players"]}–{gi["max_players"]} 人）')
                     continue
                 room.game_id = new_gid
+                # 可选地同时更新人数
+                new_count = data.get('player_count')
+                if new_count is not None:
+                    try:
+                        new_count = int(new_count)
+                        if not (gi['min_players'] <= new_count <= gi['max_players']):
+                            raise ValueError
+                        if new_count < len(room.players):
+                            new_count = len(room.players)  # 不允许低于已有玩家数
+                        room.player_count = new_count
+                    except (ValueError, TypeError):
+                        pass  # 忽略无效的 player_count
                 await _broadcast_room(room)
 
             # ── RESPONSE ──────────────────────────────────────────────────
