@@ -334,20 +334,20 @@ async def ws_endpoint(ws: WebSocket):
                 if not room.started or not room._game_ended:
                     continue
                 if member.player_idx != room.host_player_idx():
-                    await _send(ws, {'type': MsgType.ERROR,
+                    await send({'type': MsgType.ERROR,
                                      'msg': '只有房主可以切换游戏',
                                      'code': ErrorCode.FORBIDDEN})
                     continue
                 new_game_id = str(data.get('game_id', ''))
                 games_index = {g['id']: g for g in list_games()}
                 if new_game_id not in games_index:
-                    await _send(ws, {'type': MsgType.ERROR,
+                    await send({'type': MsgType.ERROR,
                                      'msg': '未知游戏',
                                      'code': ErrorCode.INVALID_MSG})
                     continue
                 ginfo = games_index[new_game_id]
                 if not (ginfo['min_players'] <= room.player_count <= ginfo['max_players']):
-                    await _send(ws, {'type': MsgType.ERROR,
+                    await send({'type': MsgType.ERROR,
                                      'msg': (f'当前玩家数 {room.player_count} 不适合游戏'
                                              f' {ginfo["name"]}'
                                              f'（需要 {ginfo["min_players"]}–{ginfo["max_players"]} 人）'),
