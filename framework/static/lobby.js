@@ -65,29 +65,13 @@ function _updateCountSelect(min, max) {
 
 function renderGameList(games) {
   _gamesData = games;
-  const sel = document.getElementById('create-game');
-  if (!sel) return;
-  sel.innerHTML = '';
-  games.forEach(g => {
-    const opt = document.createElement('option');
-    opt.value = g.id;
-    opt.textContent = `${g.name}（${g.min_players}–${g.max_players} 人）`;
-    sel.appendChild(opt);
-  });
   if (games.length) {
     selectedGame = games[0].id;
-    _updateCountSelect(games[0].min_players, games[0].max_players);
   }
-  sel.onchange = () => {
-    const g = _gamesData.find(x => x.id === sel.value);
-    if (g) { selectedGame = g.id; _updateCountSelect(g.min_players, g.max_players); }
-  };
 }
 
 /* ── 创建 / 加入 ────────────────────────────────────────────────────────── */
 function createRoom() {
-  const gameSel = document.getElementById('create-game');
-  if (gameSel) selectedGame = gameSel.value;
   if (!selectedGame) { showError('请先选择游戏'); return; }
   const name  = document.getElementById('create-name').value.trim() || '玩家';
   const count = parseInt(document.getElementById('create-count').value);
@@ -110,6 +94,7 @@ function handleRoom(msg) {
   myIdx = msg.your_idx ?? myIdx;
   // 收到新房间状态时，若有倒计时 banner 存在但 msg 显示不满员则清除
   if (!msg.started) {
+    if (msg.game_id) _loadGameScript(msg.game_id); // 预加载，静默忽略失败
     showSection('room-waiting');
     document.getElementById('room-code-display').textContent = msg.code;
     const hint = msg.password ? '🔒 有密码' : '';
@@ -165,7 +150,35 @@ function renderHostControls(msg) {
   ctrl.innerHTML = '';
 
   const isHost = (myIdx !== -1 && myIdx === msg.host_idx);
+
+  // 所有人都能看到当前游戏名称
+  if (_gamesData.length) {
+    const gameInfo = _gamesData.find(g => g.id === msg.game_id);
+    const gameLabel = document.createElement('span');
+    gameLabel.style.cssText = 'color:#aaa;font-size:.9em;align-self:center;';
+    gameLabel.textContent = gameInfo ? `当前游戏：${gameInfo.name}` : `游戏：${msg.game_id}`;
+    ctrl.appendChild(gameLabel);
+  }
+
   if (!isHost) return;  // 非房主：不显示控制按钮
+
+  // 游戏选择器
+  if (!msg.started && _gamesData.length > 1) {
+    const gameSel = document.createElement('select');
+    gameSel.style.cssText = 'background:#0f3460;color:#eee;border:1px solid #444;padding:.4rem .6rem;border-radius:6px;';
+    _gamesData.forEach(g => {
+      const opt = document.createElement('option');
+      opt.value = g.id;
+      opt.textContent = `${g.name}（${g.min_players}–${g.max_players}人）`;
+      if (g.id === msg.game_id) opt.selected = true;
+      gameSel.appendChild(opt);
+    });
+    gameSel.onchange = () => {
+      ws.send(JSON.stringify({type: 'change_game', game_id: gameSel.value}));
+      _loadGameScript(gameSel.value); // 立即开始预加载
+    };
+    ctrl.appendChild(gameSel);
+  }
 
   // 添加 AI 按钮（房间未满且游戏未开始）
   if (!msg.started && msg.players.length < msg.player_count) {
@@ -220,7 +233,7 @@ function _loadGameScript(gameId) {
   if (_loadedScripts[gameId]) return _loadedScripts[gameId];
   _loadedScripts[gameId] = new Promise((resolve, reject) => {
     const s = document.createElement('script');
-    s.src = `static/games/${gameId}.js?v=${Date.now()}`;
+    s.src = `static/games/${gameId}.js?v=1`;
     s.onload = resolve;
     s.onerror = reject;
     document.head.appendChild(s);

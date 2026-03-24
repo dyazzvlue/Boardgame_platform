@@ -20,6 +20,7 @@ class MsgType:
     START_GAME = "start_game"  # 房主手动开始
     LEAVE_GAME    = "leave_game"    # 玩家离开游戏（AI接管）
     RESTART_VOTE  = "restart_vote"  # 玩家投票重开游戏
+    CHANGE_GAME   = "change_game"   # 房主在等待室更换游戏（未开始）
     SWITCH_GAME   = "switch_game"   # 房主切换游戏（不投票）
 
     # Server → Client (restart)

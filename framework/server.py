@@ -246,6 +246,29 @@ async def ws_endpoint(ws: WebSocket):
                 await _broadcast_raw(room, {'type': MsgType.COUNTDOWN, 'seconds': 0})
                 await _start_game(room, loop)
 
+            # ── CHANGE_GAME（等待室切换游戏，房主专属） ─────────────────
+            elif t == MsgType.CHANGE_GAME:
+                if room is None or member is None or member.is_spectator:
+                    continue
+                if room.host_ws is not ws:
+                    await err(ErrorCode.FORBIDDEN, '只有房主可以更换游戏')
+                    continue
+                if room.started:
+                    continue
+                new_gid = str(msg.get('game_id', ''))[:32]
+                ginfo_map = {g['id']: g for g in list_games()}
+                if new_gid not in ginfo_map:
+                    await err(ErrorCode.INVALID_MSG, '未知游戏')
+                    continue
+                gi = ginfo_map[new_gid]
+                if not (gi['min_players'] <= room.player_count <= gi['max_players']):
+                    await err(ErrorCode.INVALID_MSG,
+                              f'当前人数 {room.player_count} 不适合游戏 {gi["name"]}'
+                              f'（需要 {gi["min_players"]}–{gi["max_players"]} 人）')
+                    continue
+                room.game_id = new_gid
+                await _broadcast_room(room)
+
             # ── RESPONSE ──────────────────────────────────────────────────
             elif t == MsgType.RESPONSE:
                 if room is None or member is None:
