@@ -287,6 +287,41 @@ async def ws_endpoint(ws: WebSocket):
                     room.clear_restart_state()
                     await _start_game(room, loop)
 
+            # ── SWITCH_GAME ───────────────────────────────────────────────
+            elif t == MsgType.SWITCH_GAME:
+                if room is None or member is None or member.is_spectator:
+                    continue
+                if not room.started or not room._game_ended:
+                    continue
+                if member.player_idx != room.host_player_idx():
+                    await _send(ws, {'type': MsgType.ERROR,
+                                     'msg': '只有房主可以切换游戏',
+                                     'code': ErrorCode.FORBIDDEN})
+                    continue
+                new_game_id = str(msg.get('game_id', ''))
+                games_index = {g['id']: g for g in list_games()}
+                if new_game_id not in games_index:
+                    await _send(ws, {'type': MsgType.ERROR,
+                                     'msg': '未知游戏',
+                                     'code': ErrorCode.INVALID_MSG})
+                    continue
+                ginfo = games_index[new_game_id]
+                if not (ginfo['min_players'] <= room.player_count <= ginfo['max_players']):
+                    await _send(ws, {'type': MsgType.ERROR,
+                                     'msg': (f'当前玩家数 {room.player_count} 不适合游戏'
+                                             f' {ginfo["name"]}'
+                                             f'（需要 {ginfo["min_players"]}–{ginfo["max_players"]} 人）'),
+                                     'code': ErrorCode.INVALID_MSG})
+                    continue
+                room.game_id = new_game_id
+                gt = getattr(room, 'game_thread', None)
+                if gt and gt.is_alive():
+                    await asyncio.get_event_loop().run_in_executor(
+                        None, lambda: gt.join(timeout=3)
+                    )
+                room.clear_restart_state()
+                await _start_game(room, loop)
+
     except WebSocketDisconnect:
         pass
     finally:

@@ -356,3 +356,5 @@ class ManilaRenderer {
     }
   }
 }
+
+if (typeof _RENDERERS !== 'undefined') _RENDERERS['manila'] = ManilaRenderer;

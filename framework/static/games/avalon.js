@@ -373,3 +373,5 @@ class AvalonRenderer {
     this.container.appendChild(overlay);
   }
 }
+
+if (typeof _RENDERERS !== 'undefined') _RENDERERS['avalon'] = AvalonRenderer;

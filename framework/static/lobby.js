@@ -5,6 +5,10 @@ let myIdx = -1;
 let selectedGame = null;
 let currentRoom = null;
 let gameRenderer = null; // 由各 game.js 注册
+const _RENDERERS = {};        // gameId → RendererClass，由各 game.js 注册
+const _loadedScripts = {};   // gameId → Promise（加载缓存）
+let _msgQueue = [];           // 脚本加载期间缓冲的消息
+let _gameLoading = false;     // 正在加载游戏脚本中
 let _countdownTimer = null;
 let _gamesData = []; // 缓存游戏列表
 
@@ -34,10 +38,10 @@ function handleMsg(msg) {
     case 'game_list': renderGameList(msg.games); break;
     case 'room':      handleRoom(msg); break;
     case 'countdown': handleCountdown(msg.seconds); break;
-    case 'state':     gameRenderer && gameRenderer.onState(msg.context); _clearTurnTimer(); break;
-    case 'request':   gameRenderer && gameRenderer.onRequest(msg.player_idx, msg.kind, msg.data); _startTurnTimer(msg.player_idx, msg.turn_timeout); break;
+    case 'state':     if (_gameLoading) { _msgQueue.push(msg); break; } gameRenderer && gameRenderer.onState(msg.context); _clearTurnTimer(); break;
+    case 'request':   if (_gameLoading) { _msgQueue.push(msg); break; } gameRenderer && gameRenderer.onRequest(msg.player_idx, msg.kind, msg.data); _startTurnTimer(msg.player_idx, msg.turn_timeout); break;
     case 'log':       appendLog(msg.text, msg.style); break;
-    case 'game_over': gameRenderer && gameRenderer.onGameOver(msg.result); _clearTurnTimer(); _showRestartBtn(); break;
+    case 'game_over': if (_gameLoading) { _msgQueue.push(msg); break; } gameRenderer && gameRenderer.onGameOver(msg.result); _clearTurnTimer(); _showRestartBtn(); break;
     case 'restart_status': _handleRestartStatus(msg); break;
     case 'error':     showError(msg.msg); break;
     case 'pong':      break;
@@ -210,21 +214,49 @@ function clearCountdownDisplay() {
   if (banner) banner.remove();
 }
 
+/* ── 懒加载游戏脚本 ─────────────────────────────────────────────────────── */
+function _loadGameScript(gameId) {
+  if (_loadedScripts[gameId]) return _loadedScripts[gameId];
+  _loadedScripts[gameId] = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = `static/games/${gameId}.js?v=${Date.now()}`;
+    s.onload = resolve;
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+  return _loadedScripts[gameId];
+}
+
 /* ── 游戏 UI 初始化 ──────────────────────────────────────────────────────── */
-function initGameUI(gameId) {
+async function initGameUI(gameId) {
   _resetRestartBtn();
+  _gameLoading = true;
+  _msgQueue = [];
   showSection('game-wrap');
   document.getElementById('log-panel').innerHTML = '';
   const container = document.getElementById('game-container');
   container.innerHTML = '';
   const respond = (kind, value) => ws.send(JSON.stringify({type: 'response', kind, value}));
-  if (gameId === 'manila') {
-    gameRenderer = new ManilaRenderer(container, myIdx, respond);
-  } else if (gameId === 'avalon') {
-    gameRenderer = new AvalonRenderer(container, myIdx, respond);
+
+  try {
+    await _loadGameScript(gameId);
+  } catch (e) {
+    container.textContent = `加载游戏 ${gameId} 失败：${e}`;
+    _gameLoading = false;
+    return;
+  }
+
+  const RendererCls = _RENDERERS[gameId];
+  if (RendererCls) {
+    gameRenderer = new RendererCls(container, myIdx, respond);
   } else {
     container.textContent = `游戏 ${gameId} 的渲染器尚未实现`;
   }
+  _gameLoading = false;
+
+  // 回放加载期间缓冲的消息
+  const queued = _msgQueue.splice(0);
+  for (const m of queued) handleMsg(m);
 }
 
 /* ── 日志 ───────────────────────────────────────────────────────────────── */
@@ -257,6 +289,8 @@ function appendLog(text, style) {
 function leaveGame() {
   if (!confirm('确认离开游戏？你的位置将由 AI 接管。')) return;
   _resetRestartBtn();
+  _gameLoading = false;
+  _msgQueue = [];
   ws.send(JSON.stringify({type: 'leave_game'}));
   _clearTurnTimer();
   gameRenderer = null;
@@ -328,12 +362,29 @@ function _showRestartBtn() {
   const btn = document.getElementById('btn-restart-vote');
   if (btn) { btn.style.display = ''; btn.textContent = '🔄 重新开始'; btn.disabled = false; }
   _restartVoted = false;
+  // 切换游戏栏：仅房主可见
+  const bar = document.getElementById('switch-game-bar');
+  if (bar && currentRoom && myIdx === currentRoom.host_idx) {
+    const sel = document.getElementById('switch-game-select');
+    if (sel) {
+      sel.innerHTML = '';
+      _gamesData.forEach(g => {
+        const opt = document.createElement('option');
+        opt.value = g.id;
+        opt.textContent = `${g.name}（${g.min_players}–${g.max_players}人）`;
+        sel.appendChild(opt);
+      });
+    }
+    bar.style.display = 'flex';
+  }
 }
 
 function _resetRestartBtn() {
   const btn = document.getElementById('btn-restart-vote');
   if (btn) { btn.style.display = 'none'; btn.textContent = '🔄 重新开始'; btn.disabled = false; }
   _restartVoted = false;
+  const bar = document.getElementById('switch-game-bar');
+  if (bar) bar.style.display = 'none';
 }
 
 function voteRestart() {
@@ -342,6 +393,12 @@ function voteRestart() {
   const btn = document.getElementById('btn-restart-vote');
   if (btn) { btn.disabled = true; btn.textContent = '已投票⌛'; }
   ws.send(JSON.stringify({type: 'restart_vote'}));
+}
+
+function switchGame() {
+  const sel = document.getElementById('switch-game-select');
+  if (!sel || !sel.value) return;
+  ws.send(JSON.stringify({type: 'switch_game', game_id: sel.value}));
 }
 
 function _handleRestartStatus(msg) {
