@@ -148,6 +148,51 @@ grep -n "_response_event.set\|wait(timeout" framework/net_bridge.py
 |------|---------|---------|
 | 游戏列表"加载中" | lobby.js 语法错误 / 浏览器缓存 | 浏览器 Console 看 SyntaxError |
 | WS 连接失败 | 服务器未启动 / 端口错误 | `ss -tlnp | grep 8000` |
-| 游戏创建报 invalid_msg | 游戏插件加载失败 | `bash tools/test-startup.sh` |
+| 游戏创建报 invalid_msg | 游戏 ID 未在 `_GAME_REGISTRY` 注册 | `python3 -c "from framework.games import list_games; print(list_games())"` |
 | 超时不生效 | turn_timeout 未传给 registry | `grep turn_timeout server.py` |
 | AI 接管后游戏卡住 | ask() 未解除阻塞 | `grep _response_event.set net_bridge.py` |
+| start.sh 退出码 1 | 端口 8000 已被占用 | `ss -tlnp | grep 8000` 确认并 kill |
+
+---
+
+## 常见服务器端代码陷阱
+
+### 陷阱 1：`ws_endpoint` 内使用 `msg.get()` 而非 `data.get()`
+
+`ws_endpoint` 中收到的 JSON 已解析为 `data`，**不叫 `msg`**：
+
+```python
+# ❌ NameError
+game_id = msg.get('game_id')
+
+# ✅ 正确
+game_id = data.get('game_id')
+```
+
+### 陷阱 2：使用 `_send(ws, {...})` 而非 `send({...})`
+
+`ws_endpoint` 内有局部闭包 `send = lambda d: ...`，**直接用 `send()`**，
+不要调用模块级的 `_send(ws, ...)`（该函数不存在或在不同作用域）：
+
+```python
+# ❌ NameError
+await _send(ws, {"type": "error", "code": "forbidden"})
+
+# ✅ 正确
+await send({"type": "error", "code": "forbidden"})
+```
+
+### 陷阱 3：在 async 处理器中做阻塞 import
+
+`ws_endpoint` 是 asyncio 协程，在其中调用 `importlib.import_module()` 会
+**阻塞整个事件循环**，导致所有 WebSocket 连接卡顿：
+
+```python
+# ❌ 阻塞事件循环
+game_cls = importlib.import_module(module_path)
+
+# ✅ 用静态 _GAME_REGISTRY 做验证，延迟 import 只在 _start_game() 中发生
+if game_id not in _GAME_REGISTRY:
+    await send({"type": "error", "code": "invalid_msg"})
+    return
+```

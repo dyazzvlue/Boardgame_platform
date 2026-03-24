@@ -101,7 +101,11 @@ class MyGameRenderer {
 }
 ```
 
-在 `lobby.js` 的 `initGameUI()` 中以 `gameId` 为键注册。
+在游戏 JS 文件**末尾**注册到 `_RENDERERS`：
+```javascript
+if (typeof _RENDERERS !== 'undefined') _RENDERERS['mygame'] = MyGameRenderer;
+```
+框架会在需要时懒加载脚本并从 `_RENDERERS` 取类实例化，**无需修改 `lobby.js`**。
 
 ---
 
@@ -112,10 +116,11 @@ class MyGameRenderer {
 - [ ] 游戏 repo：`online/adapter.py`（`class MyGame(AbstractGame)`）
 - [ ] `framework/games/<id>/__init__.py`（空文件）
 - [ ] `framework/games/<id>/plugin.py`（`GAME_CLASS = MyGame`）
-- [ ] `framework/games/__init__.py`：在 `_GAME_MODULES` 中注册
-- [ ] `framework/static/games/<id>.js`（`class MyGameRenderer`）
-- [ ] `framework/static/lobby.js`：在 `initGameUI()` 中注册渲染器
+- [ ] `framework/games/__init__.py`：在 `_GAME_REGISTRY` 中添加条目（含 name / min_players / max_players / cover / module）
+- [ ] `framework/static/games/<id>.js`（`class MyGameRenderer`，**文件末尾** `_RENDERERS['<id>'] = MyGameRenderer;`）
 - [ ] 服务器启动命令中设置 `<GAME>_PATH` 环境变量
+
+> **无需**修改 `lobby.js` 或 `index.html`，游戏 JS 由懒加载机制自动注入。
 
 ---
 

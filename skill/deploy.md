@@ -124,9 +124,30 @@ sudo systemctl enable --now gameplatform
 | `--reload` | 开启 uvicorn 热重载（仅开发） |
 | `--host IP` | 手动指定绑定地址，覆盖默认 |
 
+> `start.sh` 启动 uvicorn 时携带 `--log-level warning`，抑制 INFO 级别的请求日志
+> 噪声（`GET /favicon.ico`、heartbeat 等），只显示 WARNING 及以上。
+
 ---
 
 ## 常见部署问题
+
+### WebSocket URL 必须与页面协议匹配
+
+`lobby.js` 使用协议感知的 URL，**不要将 WS URL 硬编码为 `wss://`**：
+
+```javascript
+// ✅ 正确：自动匹配 http → ws， https → wss
+const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
+const ws = new WebSocket(`${wsProto}://${location.host}/ws`);
+
+// ❌ 错误：在 HTTP 下会连接失败
+const ws = new WebSocket(`wss://${location.host}/ws`);
+```
+
+### favicon.ico 404 抑制
+
+服务器为 `GET /favicon.ico` 返回 `204 No Content`（路由已在 `server.py` 中添加），
+避免每次连接在日志中产生 404 错误。
 
 ### Nginx 502 Bad Gateway
 uvicorn 未启动或监听地址不对。

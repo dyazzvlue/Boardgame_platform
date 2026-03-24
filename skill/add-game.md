@@ -12,10 +12,8 @@
 
 - [ ] `framework/games/<game_id>/__init__.py` — 空文件
 - [ ] `framework/games/<game_id>/plugin.py` — 注册 `GAME_CLASS`
-- [ ] `framework/games/__init__.py` — 在 `_GAME_MODULES` 中添加条目
-- [ ] `framework/static/games/<game_id>.js` — `class MyGameRenderer`
-- [ ] `framework/static/lobby.js` — 在 `initGameUI()` 中注册渲染器
-- [ ] `framework/static/index.html` — 引入 `<script src="static/games/<game_id>.js?v=..."></script>`
+- [ ] `framework/games/__init__.py` — 在 `_GAME_REGISTRY` 中添加条目（含 name / min_players / max_players / cover / module）
+- [ ] `framework/static/games/<game_id>.js` — `class MyGameRenderer`，文件末尾注册到 `_RENDERERS`
 
 ### 3. 部署侧
 
@@ -96,12 +94,27 @@ GAME_CLASS = MyGame
 ### `framework/games/__init__.py` 注册
 
 ```python
-_GAME_MODULES: dict[str, str] = {
-    'manila': 'framework.games.manila.plugin',
-    'avalon': 'framework.games.avalon.plugin',
-    'mygame': 'framework.games.mygame.plugin',  # ← 添加此行
+_GAME_REGISTRY: dict[str, dict] = {
+    'manila': {
+        'module':      'framework.games.manila.plugin',
+        'name':        '马尼拉',
+        'min_players': 3,
+        'max_players': 5,
+        'cover':       '',
+    },
+    # ↓ 添加新游戏
+    'mygame': {
+        'module':      'framework.games.mygame.plugin',
+        'name':        '我的游戏',
+        'min_players': 2,
+        'max_players': 4,
+        'cover':       '',
+    },
 }
 ```
+
+`list_games()` 直接从 `_GAME_REGISTRY` 构造列表，**不做任何 import**；
+`get_game_class(game_id)` 只在游戏真正启动时才 `importlib.import_module()`。
 
 ---
 
@@ -138,13 +151,15 @@ class MyGameRenderer {
 
 ---
 
-### `lobby.js` 注册渲染器（`initGameUI` 内）
+### 游戏 JS 末尾注册渲染器
 
 ```javascript
-} else if (gameId === 'mygame') {
-    gameRenderer = new MyGameRenderer(container, myIdx, respond);
-}
+// 在 class MyGameRenderer { ... } 定义之后，文件末尾添加：
+if (typeof _RENDERERS !== 'undefined') _RENDERERS['mygame'] = MyGameRenderer;
 ```
+
+`lobby.js` 的 `initGameUI(gameId)` 会自动从 `_RENDERERS[gameId]` 取类并实例化，
+**无需修改 `lobby.js`，也无需在 `index.html` 中添加 `<script>` 标签**（懒加载自动处理）。
 
 ---
 
