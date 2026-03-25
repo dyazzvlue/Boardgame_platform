@@ -3,7 +3,9 @@
 泛用多人联机桌游平台框架。通过 WebSocket 支持多玩家实时联机，游戏逻辑以插件形式接入，框架本身不感知任何游戏细节。
 
 > **本仓库**：[https://github.com/dyazzvlue/Boardgame_platform](https://github.com/dyazzvlue/Boardgame_platform)  
-> **马尼拉游戏仓库**：[https://github.com/dyazzvlue/Boardgame_manila](https://github.com/dyazzvlue/Boardgame_manila)
+> **马尼拉游戏仓库**：[https://github.com/dyazzvlue/Boardgame_manila](https://github.com/dyazzvlue/Boardgame_manila)  
+> **阿瓦隆游戏仓库**：[https://github.com/dyazzvlue/Boardgame_Avalon](https://github.com/dyazzvlue/Boardgame_Avalon)  
+> **印加宝藏游戏仓库**：[https://github.com/dyazzvlue/Boardgame_IncanGold](https://github.com/dyazzvlue/Boardgame_IncanGold)
 
 ---
 
@@ -43,7 +45,7 @@ pip install -e .
 
 ### 启动服务器
 
-**推荐使用 `tools/` 目录下的脚本**（Manila 与本仓库在同级目录时自动推断路径）：
+**推荐使用 `tools/` 目录下的脚本**（Manila、Avalon、IncanGold 与本仓库在同级目录时自动推断路径）：
 
 ```bash
 # 生产模式（对外开放，端口 8000）
@@ -52,14 +54,20 @@ bash tools/start.sh
 # 自定义端口
 bash tools/start.sh --port 9000
 
-# 手动指定 Manila 路径
-MANILA_PATH=/path/to/Manila bash tools/start.sh
+# 手动指定游戏路径
+MANILA_PATH=/path/to/Manila \
+AVALON_PATH=/path/to/Avalon \
+INCANGOLD_PATH=/path/to/IncanGold \
+bash tools/start.sh
 ```
 
 也可直接调用 uvicorn：
 
 ```bash
-MANILA_PATH=/path/to/Manila uvicorn framework.server:app --host 0.0.0.0 --port 8000
+MANILA_PATH=/path/to/Manila \
+AVALON_PATH=/path/to/Avalon \
+INCANGOLD_PATH=/path/to/IncanGold \
+uvicorn framework.server:app --host 0.0.0.0 --port 8000
 ```
 
 在浏览器访问 `http://<服务器IP>:8000`，即可进入大厅。
@@ -71,7 +79,10 @@ MANILA_PATH=/path/to/Manila uvicorn framework.server:app --host 0.0.0.0 --port 8
 bash tools/dev.sh
 
 # 等价于：
-MANILA_PATH=../Manila uvicorn framework.server:app --reload --host 127.0.0.1 --port 8000
+MANILA_PATH=../Manila \
+AVALON_PATH=../Avalon \
+INCANGOLD_PATH=../IncanGold \
+uvicorn framework.server:app --reload --host 127.0.0.1 --port 8000
 ```
 
 ---
@@ -264,4 +275,6 @@ class MyGameRenderer {
 | 游戏 | GAME_ID | 人数 | 状态 | 仓库 |
 |------|---------|------|------|------|
 | 马尼拉 | `manila` | 3–5 | ✅ 已接入 | [Boardgame_manila](https://github.com/dyazzvlue/Boardgame_manila) |
+| 阿瓦隆 | `avalon` | 5–10 | ✅ 已接入 | [Boardgame_Avalon](https://github.com/dyazzvlue/Boardgame_Avalon) |
+| 印加宝藏 | `incan_gold` | 3–8 | ✅ 已接入 | [Boardgame_IncanGold](https://github.com/dyazzvlue/Boardgame_IncanGold) |
 | c_g 卡牌 | `cards` | TBD | 🔲 规划中 | — |

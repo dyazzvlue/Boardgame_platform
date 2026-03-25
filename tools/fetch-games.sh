@@ -4,11 +4,12 @@
 # 用法:
 #   ./tools/fetch-games.sh              # 克隆/更新全部游戏
 #   ./tools/fetch-games.sh manila       # 只处理 manila
-#   ./tools/fetch-games.sh manila avalon
+#   ./tools/fetch-games.sh manila avalon incan_gold
 #
 # 游戏 repo 克隆到 gameplatform 平级目录，例如：
 #   /path/to/Personal/Manila/
 #   /path/to/Personal/Avalon/
+#   /path/to/Personal/IncanGold/
 
 set -e
 
@@ -26,7 +27,6 @@ fi
 FILTER=("$@")
 
 ok_count=0
-skip_count=0
 fail_count=0
 
 echo "┌─────────────────────────────────────────────┐"
