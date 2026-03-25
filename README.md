@@ -7,6 +7,7 @@
 > **阿瓦隆游戏仓库**：[https://github.com/dyazzvlue/Boardgame_Avalon](https://github.com/dyazzvlue/Boardgame_Avalon)  
 > **印加宝藏游戏仓库**：[https://github.com/dyazzvlue/Boardgame_IncanGold](https://github.com/dyazzvlue/Boardgame_IncanGold)
 
+桌游规则来源：https://andyventure.com/boardgame/
 ---
 
 ## 目录

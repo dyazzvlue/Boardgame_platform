@@ -19,7 +19,7 @@ class AvalonRenderer {
 
   _buildUI() {
     this.container.innerHTML = "";
-    this.container.style.cssText = "display:flex;flex-direction:column;height:100%;background:#0f1428;color:#d2d7e6;font-family:sans-serif;overflow:hidden;";
+    this.container.style.cssText = "display:flex;flex-direction:column;min-height:min(64vh,780px);background:#0f1428;color:#d2d7e6;font-family:sans-serif;overflow:auto;border-radius:12px;";
 
     // top bar
     const bar = this._el("div", "topBar", "padding:8px 16px;background:#16203a;border-bottom:1px solid #2d4678;font-size:15px;display:flex;align-items:center;gap:16px;");
@@ -31,22 +31,22 @@ class AvalonRenderer {
     this.container.appendChild(bar);
 
     // main area
-    const main = this._el("div","","display:flex;flex:1;overflow:hidden;");
+    const main = this._el("div","","display:flex;flex:1;flex-wrap:wrap;overflow:auto;align-items:stretch;");
 
     // left: table + track
-    const left = this._el("div","","flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:12px;");
+    const left = this._el("div","","flex:2 1 620px;min-width:280px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:12px;overflow:auto;");
     this.tableSvg = document.createElementNS("http://www.w3.org/2000/svg","svg");
     this.tableSvg.setAttribute("viewBox","0 0 640 480");
-    this.tableSvg.style.cssText = "width:640px;max-width:100%;";
+    this.tableSvg.style.cssText = "width:min(100%,820px);height:auto;max-width:100%;aspect-ratio:4 / 3;";
     left.appendChild(this.tableSvg);
-    this.trackDiv = this._el("div","","display:flex;gap:8px;margin-top:12px;align-items:center;");
+    this.trackDiv = this._el("div","","display:flex;gap:8px;margin-top:12px;align-items:center;flex-wrap:wrap;justify-content:center;width:100%;");
     left.appendChild(this.trackDiv);
-    this.actionPanel = this._el("div","actionPanel","min-height:80px;padding:12px 16px;background:#161e3a;border-top:1px solid #2d4678;width:100%;box-sizing:border-box;");
+    this.actionPanel = this._el("div","actionPanel","min-height:80px;padding:12px 16px;background:#161e3a;border-top:1px solid #2d4678;width:100%;box-sizing:border-box;border-radius:12px;overflow:auto;");
     left.appendChild(this.actionPanel);
     main.appendChild(left);
 
     // right: vote history + role
-    const right = this._el("div","","width:260px;display:flex;flex-direction:column;background:#0c1020;border-left:1px solid #1a2848;overflow-y:auto;");
+    const right = this._el("div","","flex:1 1 280px;min-width:260px;max-width:100%;display:flex;flex-direction:column;background:#0c1020;border-left:1px solid #1a2848;overflow-y:auto;");
     this.rolePanel = this._el("div","","padding:10px 12px;background:#14203c;border-bottom:1px solid #1a2848;");
     right.appendChild(this.rolePanel);
     const vh = this._el("div","","padding:8px 12px;font-size:12px;color:#8898ab;font-weight:bold;");
@@ -193,7 +193,7 @@ class AvalonRenderer {
     const sizes = ctx.mission_sizes || [2,3,2,3,3];
     const cur = ctx.round_idx || 0;
     for (let i = 0; i < 5; i++) {
-      const cell = this._el("div","",`width:82px;height:52px;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:13px;gap:2px;border:1px solid #2d4678;`);
+      const cell = this._el("div","",`flex:1 1 82px;min-width:82px;min-height:52px;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:13px;gap:2px;border:1px solid #2d4678;`);
       if (i < results.length) {
         cell.style.background = results[i] ? "#1a5a30" : "#5a1a1a";
         cell.innerHTML = `<span>${results[i] ? "✅ 成功":"❌ 失败"}</span>`;

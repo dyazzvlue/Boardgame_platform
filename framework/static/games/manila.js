@@ -7,15 +7,20 @@ class ManilaRenderer {
     this.pendingKind = null;
     this.pendingData = null;
 
+    this.wrapper = document.createElement('div');
+    this.wrapper.style.cssText = 'display:flex;flex-direction:column;gap:.75rem;width:100%;';
+    container.appendChild(this.wrapper);
+
     this.canvas = document.createElement('canvas');
     this.canvas.width = 900; this.canvas.height = 620;
-    container.appendChild(this.canvas);
+    this.canvas.style.cssText = 'width:100%;max-width:900px;height:auto;align-self:center;';
+    this.wrapper.appendChild(this.canvas);
     this.ctx = this.canvas.getContext('2d');
 
     this.actionDiv = document.createElement('div');
     this.actionDiv.id = 'action-panel';
-    this.actionDiv.style.cssText = 'margin-top:.6rem;padding:.8rem;background:#16213e;border-radius:8px;min-height:60px';
-    container.appendChild(this.actionDiv);
+    this.actionDiv.style.cssText = 'padding:.9rem;background:#16213e;border-radius:12px;min-height:60px;width:100%;overflow:auto';
+    this.wrapper.appendChild(this.actionDiv);
   }
 
   onState(ctx) {
@@ -185,10 +190,10 @@ class ManilaRenderer {
       h.textContent = `竞价 (当前: ¥${data.current_bid}, 最低: ¥${data.min_bid})`;
       d.appendChild(h);
       const row = document.createElement('div');
-      row.style.cssText='display:flex;gap:.5rem;flex-wrap:wrap';
+      row.style.cssText='display:flex;gap:.5rem;flex-wrap:wrap;align-items:center';
       const inp = document.createElement('input');
       inp.type='number'; inp.min=data.min_bid; inp.value=data.min_bid;
-      inp.style.cssText='width:80px;background:#0f3460;color:#eee;border:1px solid #444;padding:.4rem;border-radius:4px';
+      inp.style.cssText='width:min(100%,90px);background:#0f3460;color:#eee;border:1px solid #444;padding:.55rem;border-radius:8px';
       row.appendChild(inp);
       const btnBid = document.createElement('button');
       btnBid.textContent='出价'; btnBid.onclick=()=>this.respond('bid', parseInt(inp.value)||0);
@@ -221,7 +226,7 @@ class ManilaRenderer {
       (data.active_goods||[]).forEach(g=>{
         const lbl=document.createElement('label'); lbl.style.cssText='color:#aaa;font-size:.9rem;display:flex;align-items:center;gap:.3rem';
         const inp=document.createElement('input'); inp.type='number'; inp.min=0; inp.max=5; inp.value=vals[g];
-        inp.style.cssText='width:50px;background:#0f3460;color:#eee;border:1px solid #444;padding:.3rem;border-radius:4px';
+        inp.style.cssText='width:min(100%,64px);background:#0f3460;color:#eee;border:1px solid #444;padding:.45rem;border-radius:8px';
         inp.id='placement_'+g; inputs[g]=inp;
         lbl.textContent=names[g]||g; lbl.appendChild(inp); form.appendChild(lbl);
       });

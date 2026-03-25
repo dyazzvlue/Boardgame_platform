@@ -23,9 +23,9 @@ class IncanGoldRenderer {
 
   _build() {
     this.container.innerHTML = '';
-    this.container.style.cssText = 'display:flex;flex-direction:column;gap:12px;padding:14px;color:#f2ebd4;background:linear-gradient(180deg,#1c1409,#2f2210);min-height:560px;font-family:"Trebuchet MS","Microsoft YaHei",sans-serif;';
+    this.container.style.cssText = 'display:flex;flex-direction:column;gap:12px;padding:clamp(10px,2vw,16px);color:#f2ebd4;background:linear-gradient(180deg,#1c1409,#2f2210);min-height:min(60vh,560px);width:100%;font-family:"Trebuchet MS","Microsoft YaHei",sans-serif;overflow:auto;';
     this.header = _igEl('div', {style:'padding:12px 14px;border-radius:12px;background:#3a2810;box-shadow:inset 0 0 0 1px rgba(255,220,150,.18);'});
-    this.path = _igEl('div', {style:'display:flex;gap:10px;flex-wrap:wrap;min-height:132px;padding:10px;border-radius:12px;background:#2a1d0e;'});
+    this.path = _igEl('div', {style:'display:grid;grid-template-columns:repeat(auto-fit,minmax(88px,1fr));gap:10px;min-height:132px;padding:10px;border-radius:12px;background:#2a1d0e;'});
     this.players = _igEl('div', {style:'display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;'});
     this.action = _igEl('div', {style:'padding:12px;border-radius:12px;background:#2a1d0e;min-height:88px;'});
     this.container.appendChild(this.header);
@@ -89,7 +89,7 @@ class IncanGoldRenderer {
       const color = card.kind === 'treasure' ? '#8c6422' : card.kind === 'artifact' ? '#69408f' : '#7f2f2f';
       const title = card.kind === 'treasure' ? `宝藏 ${card.value}` : card.kind === 'artifact' ? `神器 ${card.value}` : (card.label || card.hazard_type || '灾难');
       const sub = card.kind === 'treasure' ? `余数 ${card.leftover || 0}` : card.kind === 'hazard' ? '小心重复灾难' : '唯一返回者可取走';
-      const box = _igEl('div', {style:`width:98px;min-height:112px;border-radius:12px;background:${color};padding:10px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.12);display:flex;flex-direction:column;justify-content:space-between;`});
+      const box = _igEl('div', {style:`min-height:112px;border-radius:12px;background:${color};padding:10px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.12);display:flex;flex-direction:column;justify-content:space-between;min-width:0;`});
       box.appendChild(_igEl('div', {style:'font-size:16px;font-weight:bold;'}, title));
       box.appendChild(_igEl('div', {style:'font-size:12px;color:#f5e9cc;opacity:.9;'}, sub));
       this.path.appendChild(box);
