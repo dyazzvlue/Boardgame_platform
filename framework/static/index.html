@@ -50,6 +50,8 @@ button{
   min-height:44px;
 }
 button:hover{background:#c73652}
+button:disabled{opacity:.55;cursor:not-allowed;filter:saturate(.7)}
+button:disabled:hover{background:var(--danger)}
 button.secondary{background:var(--panel-alt)}
 button.secondary:hover{background:#163d6e}
 .game-card{display:block;background:var(--panel-alt);border-radius:14px;padding:1rem;margin:.4rem 0;cursor:pointer;border:2px solid transparent;transition:.2s;width:100%}
@@ -107,7 +109,8 @@ canvas{display:block;border-radius:12px;background:#0a0a1e;max-width:100%;height
         <option value="0">不限制</option>
       </select>
     </div>
-    <div class="row"><button onclick="createRoom()">创建房间</button></div>
+    <div class="row"><button id="btn-create-room" onclick="createRoom()" disabled>创建房间</button></div>
+    <div id="create-status" style="margin-top:.6rem;color:var(--muted);font-size:.92rem;">正在连接服务器…</div>
   </div>
   <div class="panel">
     <h2>加入 / 观战</h2>
@@ -144,6 +147,6 @@ canvas{display:block;border-radius:12px;background:#0a0a1e;max-width:100%;height
   <div id="log-panel"></div>
 </div>
 
-<script src="static/lobby.js?v=1775000100"></script>
+<script src="static/lobby.js?v=1775000101"></script>
 </body>
 </html>

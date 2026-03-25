@@ -159,6 +159,32 @@ curl http://127.0.0.1:8000/    # 应返回 HTML
 ### WebSocket 连接被断开（1006）
 检查 Nginx `proxy_read_timeout` 是否设为足够大的值（nginx.conf 已设 86400）。
 
+### 首次打开页面时提示"请选择游戏"
+这通常不是游戏配置缺失，而是浏览器已经拿到 HTML，但 WebSocket 尚未完成连接，或 `game_list` 首包尚未返回。
+
+现版本大厅已加入加载态保护：
+- 未建立 WebSocket 连接前，"创建房间"按钮保持禁用
+- 连接成功但 `game_list` 未返回前，状态文案显示"正在加载游戏列表…"
+- 断线重连时，按钮会再次禁用，避免旧状态残留
+
+若线上仍明显等待过久，应重点检查反向代理对 `/ws` 的转发是否正确：
+```bash
+# 1. 应用本机直连应快速返回首页
+curl http://127.0.0.1:8000/
+
+# 2. 用浏览器开发者工具查看 /ws 是否成功升级为 WebSocket
+#    重点关注 101 Switching Protocols、握手耗时、是否反复重连
+
+# 3. 查看 Nginx 最终生效配置
+sudo nginx -T | grep -n "location /ws\|proxy_set_header Upgrade\|proxy_set_header Connection\|proxy_http_version\|proxy_read_timeout"
+```
+
+Nginx 至少应满足：
+- `proxy_http_version 1.1`
+- `proxy_set_header Upgrade $http_upgrade`
+- `proxy_set_header Connection "upgrade"`
+- `proxy_read_timeout` 足够大
+
 ### SSL 证书过期
 ```bash
 sudo certbot renew --dry-run   # 测试续期

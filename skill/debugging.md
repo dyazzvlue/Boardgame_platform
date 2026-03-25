@@ -68,6 +68,37 @@ print('BRACES:', c.count('{'), c.count('}'), '| BROKEN:', broken or 'none')
 
 ---
 
+## 问题：首次打开页面时创建房间提示"请选择游戏"
+
+**症状：** 通过域名首次打开大厅，立即点击"创建房间"会报"请选择游戏"；等待几秒后恢复正常。
+
+**根因：** 页面 HTML 已经加载完，但 WebSocket 连接尚未建立，或首个 `game_list` 消息还没返回。旧版大厅会在 `selectedGame` 仍为空时直接允许点击创建。
+
+**现有修复：**
+- 大厅初始状态下禁用"创建房间"按钮
+- 收到 `game_list` 后才设置默认游戏并启用按钮
+- 断线重连时重置 `selectedGame` 和按钮状态
+
+**仍然等待较久时的排查：**
+```bash
+# 服务器本机检查应用是否正常
+curl http://127.0.0.1:8000/
+
+# 如已安装 websockets，可直接验证本机 WS 首包
+python3 - <<'PY'
+import asyncio, json, websockets
+async def main():
+    async with websockets.connect('ws://127.0.0.1:8000/ws') as ws:
+        await ws.send(json.dumps({'type': 'list'}))
+        print(await asyncio.wait_for(ws.recv(), timeout=3))
+asyncio.run(main())
+PY
+```
+
+若本机快、域名慢，则基本可判定是 Nginx/Caddy/CDN 层的 WebSocket 握手或代理配置问题。
+
+---
+
 ## 问题：修改 lobby.js 后浏览器不更新
 
 **原因：** 浏览器缓存了 `lobby.js`，只要 `index.html` 中的版本号不变就不重新请求。

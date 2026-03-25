@@ -11,17 +11,36 @@ let _msgQueue = [];           // 脚本加载期间缓冲的消息
 let _gameLoading = false;     // 正在加载游戏脚本中
 let _countdownTimer = null;
 let _gamesData = []; // 缓存游戏列表
+let _wsReady = false;
+let _gameListReady = false;
 
 /* ── 连接 ──────────────────────────────────────────────────────────────── */
 function connect() {
+  _wsReady = false;
+  _gameListReady = false;
+  selectedGame = null;
+  _gamesData = [];
+  _updateCreateAvailability();
   ws = new WebSocket(WS_URL);
   ws.onopen = () => {
+    _wsReady = true;
+    _gameListReady = false;
+    selectedGame = null;
+    _gamesData = [];
+    _updateCreateAvailability();
     ws.send(JSON.stringify({type: 'list'}));
     startPing();
   };
   ws.onmessage = e => handleMsg(JSON.parse(e.data));
   ws.onerror = () => {};
-  ws.onclose = () => setTimeout(connect, 2000);
+  ws.onclose = () => {
+    _wsReady = false;
+    _gameListReady = false;
+    selectedGame = null;
+    _gamesData = [];
+    _updateCreateAvailability('连接已断开，正在重连…');
+    setTimeout(connect, 2000);
+  };
 }
 
 let _pingTimer = null;
@@ -62,16 +81,49 @@ function _updateCountSelect(min, max) {
   }
 }
 
-function renderGameList(games) {
-  _gamesData = games;
-  if (games.length) {
-    selectedGame = games[0].id;
+function _setCreateStatus(message, isError = false) {
+  const el = document.getElementById('create-status');
+  if (!el) return;
+  el.textContent = message;
+  el.style.color = isError ? 'var(--danger)' : 'var(--muted)';
+}
+
+function _updateCreateAvailability(statusText = '') {
+  const btn = document.getElementById('btn-create-room');
+  const ready = _wsReady && _gameListReady && !!selectedGame;
+  if (btn) btn.disabled = !ready;
+
+  if (statusText) {
+    _setCreateStatus(statusText, statusText.includes('没有可用游戏'));
+    return;
   }
+  if (!_wsReady) {
+    _setCreateStatus('正在连接服务器…');
+    return;
+  }
+  if (!_gameListReady) {
+    _setCreateStatus('正在加载游戏列表…');
+    return;
+  }
+  if (!selectedGame) {
+    _setCreateStatus('游戏列表已加载，但当前没有可用游戏。', true);
+    return;
+  }
+  _setCreateStatus(`已加载 ${_gamesData.length} 个游戏，可以创建房间。`);
+}
+
+function renderGameList(games) {
+  _gamesData = Array.isArray(games) ? games : [];
+  _gameListReady = true;
+  selectedGame = _gamesData.length ? _gamesData[0].id : null;
+  _updateCreateAvailability();
 }
 
 /* ── 创建 / 加入 ────────────────────────────────────────────────────────── */
 function createRoom() {
-  if (!selectedGame) { showError('请先选择游戏'); return; }
+  if (!_wsReady) { showError('服务器连接尚未建立，请稍候'); return; }
+  if (!_gameListReady) { showError('游戏列表仍在加载，请稍候'); return; }
+  if (!selectedGame) { showError('当前没有可用游戏，请稍后重试'); return; }
   const name    = document.getElementById('create-name').value.trim() || '玩家';
   const pwd     = document.getElementById('create-pwd').value;
   const timeout = parseInt(document.getElementById('create-timeout').value);
