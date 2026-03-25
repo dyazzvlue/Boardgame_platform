@@ -19,6 +19,13 @@ _GAME_REGISTRY: dict[str, dict] = {
         'max_players': 10,
         'cover': '',
     },
+    'incan_gold': {
+        'module': 'framework.games.incan_gold.plugin',
+        'name': '印加宝藏',
+        'min_players': 3,
+        'max_players': 8,
+        'cover': '',
+    },
 }
 _cache: dict[str, type] = {}
 

@@ -163,6 +163,130 @@ if (typeof _RENDERERS !== 'undefined') _RENDERERS['mygame'] = MyGameRenderer;
 
 ---
 
+## Incan Gold 接入实例
+
+下面是这次接入 `incan_gold` 时总结出来的一套最小可行模式，适合给类似“规则集中、前端按钮很少”的桌游复用。
+
+### 目录落点
+
+```text
+IncanGold/
+├── game.py
+├── player.py
+├── constants.py
+├── ui.py
+├── gui_main.py
+├── gui/
+│   ├── bridge.py
+│   └── renderer.py
+└── online/
+    ├── adapter.py
+    ├── state.py
+    └── _ui_shim.py
+
+gameplatform/framework/games/incan_gold/
+└── plugin.py
+
+gameplatform/framework/static/games/
+└── incan_gold.js
+```
+
+### 适配器设计
+
+Incan Gold 采用的是“核心规则只依赖 `ui` 模块”的模式：
+
+- CLI 模式：真实使用 `ui.py`
+- GUI 模式：在 `gui_main.py` 中把 `sys.modules['ui']` 指向 `gui.bridge`
+- 联机模式：在 `online/adapter.py` 中把 `sys.modules['ui']` 指向 `online._ui_shim`
+
+这种做法的好处是：
+
+- `game.py` 不需要感知 FastAPI、WebSocket、pygame
+- 三种入口共享同一套规则逻辑
+- 后续改规则时基本只动 `game.py`
+
+### 插件注册示例
+
+`framework/games/__init__.py` 中的注册项：
+
+```python
+'incan_gold': {
+    'module': 'framework.games.incan_gold.plugin',
+    'name': '印加宝藏',
+    'min_players': 3,
+    'max_players': 8,
+    'cover': '',
+},
+```
+
+`framework/games/incan_gold/plugin.py`：
+
+```python
+import os
+import sys
+
+_INCAN_PATH = os.environ.get(
+    'INCANGOLD_PATH',
+    os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'IncanGold'),
+)
+_real = os.path.realpath(_INCAN_PATH)
+if _real not in sys.path:
+    sys.path.insert(0, _real)
+
+from online.adapter import IncanGoldGame
+GAME_CLASS = IncanGoldGame
+```
+
+### 联机状态最小集合
+
+Incan Gold 前端真正依赖的状态字段是：
+
+- `phase`
+- `round_num`
+- `table_gems`
+- `artifacts_on_path`
+- `hazards_seen_labels`
+- `revealed_cards`
+- `players`
+- `result`
+
+如果前端画面空白，先检查 `online/state.py` 和 `game.get_public_state()` 是否真的返回了这些字段。
+
+### 前端渲染器接入要点
+
+`incan_gold.js` 这次踩过的坑可以直接记住：
+
+- 不要假设大厅提供全局 DOM helper，自己的文件里需要自带 helper
+- 文件末尾必须注册到 `_RENDERERS`
+- 如果懒加载脚本改了但浏览器没刷新，记得 bump `lobby.js` 里的 `?v=`
+
+最小渲染器结构：
+
+```javascript
+class IncanGoldRenderer {
+  constructor(container, myIdx, respond) { ... }
+  onState(ctx) { ... }
+  onRequest(playerIdx, kind, data) { ... }
+  onGameOver(result) { ... }
+}
+
+if (typeof _RENDERERS !== 'undefined') {
+  _RENDERERS['incan_gold'] = IncanGoldRenderer;
+}
+```
+
+### 适合什么类型的游戏复用这套模式
+
+这套 Incan Gold 接入方式特别适合：
+
+- 单回合动作很少、按钮简单的桌游
+- 核心状态是“完整快照”，而不是复杂局部增量 UI
+- GUI / CLI / 联机都希望共用同一套规则引擎的项目
+
+如果是像 Manila 那样 UI 和规则强耦合、交互种类很多的游戏，也能复用这个模式，但需要更厚的 `bridge/shim` 层。
+
+---
+
 ## ask() 的 None 处理规范
 
 `bridge.ask()` 在以下情况返回 `None`：

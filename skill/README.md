@@ -6,7 +6,7 @@
 |------|------|
 | [architecture.md](architecture.md) | 框架架构、模块职责、线程模型、设计原则 |
 | [protocol.md](protocol.md) | WebSocket 消息协议完整参考（类型、字段、流程） |
-| [add-game.md](add-game.md) | 接入新游戏的完整清单与代码模板 |
+| [add-game.md](add-game.md) | 接入新游戏的完整清单、代码模板与 Incan Gold 实例 |
 | [frontend.md](frontend.md) | 前端 JS 开发规范（渲染器 API、大厅钩子、计时器） |
 | [debugging.md](debugging.md) | 常见问题排查、历史 Bug 记录、快速诊断命令 |
 | [deploy.md](deploy.md) | 生产部署指南（Nginx + SSL + systemd + 安全加固清单） |
