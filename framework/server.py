@@ -340,6 +340,7 @@ async def ws_endpoint(ws: WebSocket):
                 room._broadcast_task = None
                 room.started = False
                 room._bridge = None
+                room.clear_ai_players()
                 room.clear_restart_state()
                 await _broadcast_room(room)
 
@@ -362,14 +363,17 @@ async def ws_endpoint(ws: WebSocket):
                                      'code': ErrorCode.INVALID_MSG})
                     continue
                 ginfo = games_index[new_game_id]
-                if not (ginfo['min_players'] <= room.player_count <= ginfo['max_players']):
+                room.clear_ai_players()
+                human_count = len(room.players)
+                if human_count > ginfo['max_players']:
                     await send({'type': MsgType.ERROR,
-                                     'msg': (f'当前玩家数 {room.player_count} 不适合游戏'
+                                     'msg': (f'当前真人玩家数 {human_count} 超过游戏'
                                              f' {ginfo["name"]}'
-                                             f'（需要 {ginfo["min_players"]}–{ginfo["max_players"]} 人）'),
+                                             f' 上限 {ginfo["max_players"]} 人'),
                                      'code': ErrorCode.INVALID_MSG})
                     continue
                 room.game_id = new_game_id
+                room.player_count = max(ginfo['min_players'], human_count)
                 gt = getattr(room, 'game_thread', None)
                 if gt and gt.is_alive():
                     await asyncio.get_event_loop().run_in_executor(

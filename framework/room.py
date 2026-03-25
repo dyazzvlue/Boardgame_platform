@@ -76,6 +76,22 @@ class Room:
         self._restart_votes.clear()
         self._game_ended = False
 
+    def clear_ai_players(self):
+        """返回等待室时移除所有 AI 占位，并重排真人玩家索引。"""
+        with self._lock:
+            kept_members = []
+            next_player_idx = 0
+            for member in self.members:
+                if member.is_spectator:
+                    kept_members.append(member)
+                    continue
+                if member.is_ai:
+                    continue
+                member.player_idx = next_player_idx
+                next_player_idx += 1
+                kept_members.append(member)
+            self.members = kept_members
+
     def check_password(self, pwd: str) -> bool:
         """密码正确（或无密码）返回 True。"""
         if self._password_hash is None:
