@@ -18,6 +18,7 @@
 ### 3. 部署侧
 
 - [ ] 启动命令中设置 `<GAME_ID大写>_PATH` 环境变量（或用 `tools/start.sh`）
+- [ ] `tools/games.conf` 末尾添加一行：`<game_id>  <ENV_VAR>  <DirName>  <git_url_or_local>`
 
 ---
 
@@ -75,17 +76,42 @@ class MyGame(AbstractGame):
 
 ### `framework/games/<game_id>/plugin.py`
 
+> ⚠ 必须使用模块隔离模式，否则多游戏并存时 `sys.modules` 会互相污染导致 ImportError。
+
 ```python
-import sys, os
+import os, sys
 
 _PATH = os.environ.get(
     "MYGAME_PATH",
-    os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "MyGame")
+    os.path.realpath(os.path.join(os.path.dirname(__file__), "../../../../MyGame"))
 )
-if os.path.realpath(_PATH) not in sys.path:
-    sys.path.insert(0, os.path.realpath(_PATH))
+_real = os.path.realpath(_PATH)
 
+# 1. 保存其他游戏已缓存的同名模块
+_CONFLICT_NAMES = [
+    "online", "online.state", "online.adapter", "online._ui_shim",
+    "constants", "player", "game", "ai",  # 按实际顶层模块列出
+]
+_saved = {k: sys.modules[k] for k in _CONFLICT_NAMES if k in sys.modules}
+for k in _CONFLICT_NAMES:
+    sys.modules.pop(k, None)
+if _real not in sys.path:
+    sys.path.insert(0, _real)
+
+# 2. 加载本游戏
 from online.adapter import MyGame  # noqa: E402
+
+# 3. 移入私有命名空间，避免污染后续游戏
+for k in list(sys.modules.keys()):
+    if k == "online" or k.startswith("online."):
+        sys.modules[f"_mygame_{k}"] = sys.modules.pop(k)
+for k in ["constants", "player", "game", "ai"]:
+    if k in sys.modules:
+        sys.modules[f"_mygame_{k}"] = sys.modules.pop(k)
+
+# 4. 恢复其他游戏的缓存
+sys.modules.update(_saved)
+
 GAME_CLASS = MyGame
 ```
 

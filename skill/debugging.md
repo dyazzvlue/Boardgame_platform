@@ -227,3 +227,72 @@ if game_id not in _GAME_REGISTRY:
     await send({"type": "error", "code": "invalid_msg"})
     return
 ```
+
+
+---
+
+## 问题：多游戏并存时某个游戏加载报 ImportError / 拿到错误的类
+
+**症状：**
+```
+cannot import name 'IncanGoldGame' from 'online.adapter'
+(/home/.../Manila/online/adapter.py)
+```
+即 `incan_gold` 插件 import 到了 Manila 的 `online.adapter`。
+
+**根因：**
+多个游戏都有 `online/adapter.py`，Python 将第一个加载的版本缓存到 `sys.modules['online.adapter']`。
+后续插件执行 `from online.adapter import XxxGame` 直接命中缓存，拿到的是别的游戏的模块。
+
+**修复：plugin.py 必须使用模块隔离模式（参考 Avalon）**
+
+```python
+import os, sys
+
+_PATH = os.environ.get("MYGAME_PATH", ...)
+_real = os.path.realpath(_PATH)
+
+# 1. 保存其他游戏已缓存的同名模块
+_CONFLICT_NAMES = [
+    "online", "online.state", "online.adapter", "online._ui_shim",
+    "constants", "player", "game", "ai",   # 游戏自身的顶层模块
+]
+_saved = {k: sys.modules[k] for k in _CONFLICT_NAMES if k in sys.modules}
+for k in _CONFLICT_NAMES:
+    sys.modules.pop(k, None)
+
+if _real not in sys.path:
+    sys.path.insert(0, _real)
+
+# 2. 加载本游戏适配器（此时 online.adapter 指向本游戏）
+from online.adapter import MyGame  # noqa: E402
+
+# 3. 将本游戏模块移入私有命名空间
+for k in list(sys.modules.keys()):
+    if k == "online" or k.startswith("online."):
+        sys.modules[f"_mygame_{k}"] = sys.modules.pop(k)
+for k in ["constants", "player", "game", "ai"]:
+    if k in sys.modules:
+        sys.modules[f"_mygame_{k}"] = sys.modules.pop(k)
+
+# 4. 恢复其他游戏的缓存
+sys.modules.update(_saved)
+
+GAME_CLASS = MyGame
+```
+
+**验证方法（测试所有加载顺序）：**
+```python
+from framework.games import _cache, get_game_class
+_cache.clear()
+for gid in ['incan_gold', 'transcard', 'manila']:
+    cls = get_game_class(gid)
+    print(gid, '->', cls.__name__)
+```
+所有游戏 class 名称必须对应正确，不得串行。
+
+**tools/games.conf 也需要添加新游戏行：**
+```
+mygame  MYGAME_PATH  MyGame  https://github.com/...
+```
+格式：`<game_id>  <env_var>  <local_dir_name>  <git_url_or_local>`
