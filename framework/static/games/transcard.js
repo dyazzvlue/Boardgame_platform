@@ -31,10 +31,19 @@ class TransCardRenderer {
     this.wrapper.appendChild(this.playersDiv);
 
     // 手牌区
+    const handHeader = document.createElement('div');
+    handHeader.style.cssText = 'display:flex;align-items:center;gap:.6rem;';
     this.handLabel = document.createElement('div');
     this.handLabel.style.cssText = 'color:#f0c040;font-weight:bold;font-size:.95rem;';
     this.handLabel.textContent = '我的手牌';
-    this.wrapper.appendChild(this.handLabel);
+    const btnSort = document.createElement('button');
+    btnSort.textContent = '排序';
+    btnSort.className = 'secondary';
+    btnSort.style.cssText = 'padding:.2rem .6rem;font-size:.8rem;';
+    btnSort.onclick = () => this._sortHand();
+    handHeader.appendChild(this.handLabel);
+    handHeader.appendChild(btnSort);
+    this.wrapper.appendChild(handHeader);
 
     this.handDiv = document.createElement('div');
     this.handDiv.style.cssText = 'display:flex;gap:.35rem;flex-wrap:wrap;min-height:60px;';
@@ -113,6 +122,14 @@ class TransCardRenderer {
       card.innerHTML = html;
       this.playersDiv.appendChild(card);
     });
+  }
+
+  // ── 手牌排序 ───────────────────────────────────────────────
+
+  _sortHand() {
+    // rank 字段值：1=A, 2-10, 11=J, 12=Q, 13=K, 14=黑JOKER, 15=红JOKER
+    this.myHand = [...this.myHand].sort((a, b) => a.rank - b.rank);
+    this._renderHand();
   }
 
   // ── 手牌渲染 ───────────────────────────────────────────────
