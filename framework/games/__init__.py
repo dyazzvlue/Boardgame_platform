@@ -26,6 +26,13 @@ _GAME_REGISTRY: dict[str, dict] = {
         'max_players': 8,
         'cover': '',
     },
+    'transcard': {
+        'module': 'framework.games.transcard.plugin',
+        'name': '转牌',
+        'min_players': 3,
+        'max_players': 6,
+        'cover': '',
+    },
 }
 _cache: dict[str, type] = {}
 
