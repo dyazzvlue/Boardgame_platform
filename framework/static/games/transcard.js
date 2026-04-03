@@ -217,5 +217,4 @@ class TransCardRenderer {
   }
 }
 
-// 注册到全局渲染器表
-_RENDERERS['transcard'] = TransCardRenderer;
+if (typeof _RENDERERS !== 'undefined') _RENDERERS['transcard'] = TransCardRenderer;
