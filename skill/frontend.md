@@ -132,9 +132,12 @@ showSection('game-wrap')     // 游戏界面
 
 引入新游戏脚本时需加版本查询串（Unix 时间戳）破坏浏览器缓存：
 ```html
-<script src="static/games/mygame.js?v=1773881881000"></script>
+<script src="/static/games/mygame.js?v=1773881881000"></script>
 ```
-每次修改文件后**更新版本号**。
+每次修改文件后**更新版本号**（同步更新 `index.html` 和 `lobby.js` 中的引用）。
+
+**路径必须使用绝对路径**（以 `/` 开头）。相对路径 `static/games/...` 在 URL
+包含子路径时会解析到错误位置导致 404。
 
 ---
 
@@ -148,3 +151,12 @@ showSection('game-wrap')     // 游戏界面
 
 3. **`respond` 闭包**：在 `initGameUI` 内创建，绑定最新的 `ws` 引用，
    不要在外部缓存此函数
+
+4. **`_loadedScripts` 缓存 rejected promise**：`_loadGameScript` 若不清理失败的
+   Promise，一旦预加载失败（代理 403、网络抖动），该游戏界面将永远无法加载。
+   **修复**：创建 Promise 后立即 `.catch(() => { delete _loadedScripts[gameId]; })`。
+
+5. **`_gameLoading` 永久为 true**：渲染器构造函数若抛异常且没有 try-catch，
+   `_gameLoading` 不会重置，所有后续 `state`/`request`/`game_over` 消息
+   进入 `_msgQueue` 永不回放，游戏界面卡死。
+   **修复**：`new RendererCls(...)` 放在 try-catch 内，`_gameLoading = false` 无条件执行。

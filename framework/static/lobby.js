@@ -324,14 +324,17 @@ function clearCountdownDisplay() {
 /* ── 懒加载游戏脚本 ─────────────────────────────────────────────────────── */
 function _loadGameScript(gameId) {
   if (_loadedScripts[gameId]) return _loadedScripts[gameId];
-  _loadedScripts[gameId] = new Promise((resolve, reject) => {
+  const p = new Promise((resolve, reject) => {
     const s = document.createElement('script');
-    s.src = `/static/games/${gameId}.js?v=1775192000`;
+    s.src = `/static/games/${gameId}.js?v=1777360000`;
     s.onload = resolve;
     s.onerror = reject;
     document.head.appendChild(s);
   });
-  return _loadedScripts[gameId];
+  _loadedScripts[gameId] = p;
+  // 失败后清除缓存，下次可重试
+  p.catch(() => { delete _loadedScripts[gameId]; });
+  return p;
 }
 
 /* ── 游戏 UI 初始化 ──────────────────────────────────────────────────────── */
@@ -355,7 +358,12 @@ async function initGameUI(gameId) {
 
   const RendererCls = _RENDERERS[gameId];
   if (RendererCls) {
-    gameRenderer = new RendererCls(container, myIdx, respond);
+    try {
+      gameRenderer = new RendererCls(container, myIdx, respond);
+    } catch (e) {
+      console.error('[initGameUI] 渲染器构造失败:', e);
+      container.textContent = `游戏 ${gameId} 初始化失败：${e.message || e}`;
+    }
   } else {
     container.textContent = `游戏 ${gameId} 的渲染器尚未实现`;
   }
