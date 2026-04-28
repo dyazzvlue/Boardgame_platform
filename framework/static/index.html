@@ -85,18 +85,80 @@ canvas{display:block;border-radius:12px;background:#0a0a1e;max-width:100%;height
 }
 @media (max-width: 720px){
   body{padding:10px}
-  #lobby,#room-waiting,#game-wrap{padding:10px}
+  #lobby,#room-waiting,#game-wrap,#home,#rules{padding:10px}
   .panel{padding:14px}
   .row label{flex:1 1 100%;min-width:0}
   .row > input,.row > select,.row > div{flex:1 1 100%}
   #game-top-bar{padding:10px}
   #turn-timer{flex-basis:100%}
 }
+
+/* ── 首页 & 规则页 ────────────────────────────────────────────────────── */
+#home,#rules{width:min(100%,960px);margin:0 auto;padding:clamp(12px,2vw,24px)}
+#home{text-align:center}
+#home .site-title{font-size:clamp(2.2rem,5vw,3.2rem);color:var(--accent);margin-bottom:.6rem}
+#home .site-desc{color:var(--muted);font-size:1.05rem;margin-bottom:2rem;line-height:1.7}
+#home .stat-bar{display:flex;justify-content:center;gap:2rem;margin-bottom:2rem;flex-wrap:wrap}
+#home .stat-item{background:var(--panel);border-radius:var(--radius);padding:1rem 1.6rem;min-width:120px}
+#home .stat-item .num{font-size:2rem;font-weight:bold;color:var(--accent)}
+#home .stat-item .label{color:var(--muted);font-size:.85rem}
+#home .entry-cards{display:flex;gap:1.2rem;justify-content:center;flex-wrap:wrap}
+#home .entry-card{background:var(--panel);border-radius:var(--radius);padding:1.6rem 2rem;cursor:pointer;border:2px solid transparent;transition:.25s;min-width:220px;flex:0 1 300px}
+#home .entry-card:hover{border-color:var(--accent);transform:translateY(-4px);box-shadow:0 10px 30px rgba(0,0,0,.3)}
+#home .entry-card .icon{font-size:2.4rem;margin-bottom:.6rem}
+#home .entry-card h3{color:var(--accent);margin-bottom:.4rem;font-size:1.15rem}
+#home .entry-card p{color:var(--muted);font-size:.9rem}
+#rules .rules-header{display:flex;align-items:center;gap:1rem;margin-bottom:1.5rem;flex-wrap:wrap}
+#rules .rules-header h1{color:var(--accent);font-size:clamp(1.6rem,3.5vw,2.2rem);margin:0}
+#rules .rules-game-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1rem;margin-bottom:1.5rem}
+#rules .rule-card{background:var(--panel);border-radius:var(--radius);padding:1rem 1.2rem;cursor:pointer;border:2px solid transparent;transition:.2s;text-align:center}
+#rules .rule-card:hover,#rules .rule-card.active{border-color:var(--accent)}
+#rules .rule-card h3{color:var(--accent);font-size:1rem;margin-bottom:.3rem}
+#rules .rule-card small{color:var(--muted)}
+#rule-content{background:var(--panel);border-radius:var(--radius);padding:clamp(16px,3vw,32px);line-height:1.8;display:none}
+#rule-content h1,#rule-content h2,#rule-content h3{color:var(--accent);margin:1.2em 0 .5em}
+#rule-content h1{font-size:1.5rem}
+#rule-content h2{font-size:1.25rem}
+#rule-content h3{font-size:1.1rem}
+#rule-content p{margin:.6em 0;color:var(--text)}
+#rule-content ul,#rule-content ol{margin:.6em 0 .6em 1.5em;color:var(--text)}
+#rule-content li{margin:.3em 0}
+#rule-content code{background:var(--panel-alt);padding:.15em .4em;border-radius:4px;font-size:.9em}
+#rule-content pre{background:var(--panel-alt);padding:1rem;border-radius:8px;overflow-x:auto}
+#rule-content table{border-collapse:collapse;width:100%;margin:1em 0}
+#rule-content th,#rule-content td{border:1px solid rgba(255,255,255,.15);padding:.5em .8em;text-align:left}
+#rule-content th{background:var(--panel-alt);color:var(--accent)}
+#rule-content blockquote{border-left:3px solid var(--accent);padding:.4em 1em;margin:.6em 0;color:var(--muted)}
+#rule-content strong{color:var(--accent)}
+#rule-loading{color:var(--muted);padding:2rem;text-align:center}
 </style>
+<script src="/static/marked.min.js"></script>
 </head>
 <body>
+<!-- 首页 -->
+<div id="home">
+  <div class="site-title">🎲 Dy's Game Room</div>
+  <p class="site-desc">一个和朋友一起在线玩桌游的地方。<br>支持多人实时对局，规则自动裁判，随时随地开一局。</p>
+  <div class="stat-bar">
+    <div class="stat-item"><div class="num" id="home-game-count">—</div><div class="label">支持的游戏</div></div>
+    <div class="stat-item"><div class="num" id="home-room-count">—</div><div class="label">功能完善中</div></div>
+  </div>
+  <div class="entry-cards">
+    <div class="entry-card" onclick="enterLobby()">
+      <div class="icon">🎮</div>
+      <h3>游戏大厅</h3>
+      <p>创建房间或加入好友的游戏</p>
+    </div>
+    <div class="entry-card" onclick="showRules()">
+      <div class="icon">📖</div>
+      <h3>游戏规则</h3>
+      <p>查看所有支持的游戏的规则说明</p>
+    </div>
+  </div>
+</div>
+
 <!-- 大厅 -->
-<div id="lobby">
+<div id="lobby" class="hidden">
   <h1>🎲 GamePlatform</h1>
   <div class="panel">
     <h2>创建房间</h2>
@@ -125,6 +187,17 @@ canvas{display:block;border-radius:12px;background:#0a0a1e;max-width:100%;height
   <div id="error-msg"></div>
 </div>
 
+<!-- 规则页 -->
+<div id="rules" class="hidden">
+  <div class="rules-header">
+    <button class="secondary" onclick="showHome()" style="padding:.5rem 1rem">← 返回首页</button>
+    <h1>📖 游戏规则</h1>
+  </div>
+  <div class="rules-game-list" id="rules-game-list"></div>
+  <div id="rule-loading" style="display:none">加载中…</div>
+  <div id="rule-content"></div>
+</div>
+
 <!-- 等待开始 -->
 <div id="room-waiting" class="hidden">
   <div class="panel">
@@ -147,6 +220,6 @@ canvas{display:block;border-radius:12px;background:#0a0a1e;max-width:100%;height
   <div id="log-panel"></div>
 </div>
 
-<script src="/static/lobby.js?v=1777360000"></script>
+<script src="/static/lobby.js?v=1777580001"></script>
 </body>
 </html>

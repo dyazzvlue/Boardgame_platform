@@ -43,6 +43,27 @@ async def favicon():
     return Response(status_code=204)
 
 
+# ── REST API ──────────────────────────────────────────────────────────────────
+_WORKSPACE = Path(__file__).resolve().parent.parent.parent
+
+@app.get('/api/games')
+async def api_games():
+    return list_games()
+
+@app.get('/api/rules/{game_id}')
+async def api_rules(game_id: str):
+    from fastapi.responses import JSONResponse
+    from .games import _GAME_REGISTRY
+    entry = _GAME_REGISTRY.get(game_id)
+    if not entry or 'rules_file' not in entry:
+        return JSONResponse({'error': 'not found'}, status_code=404)
+    rules_path = _WORKSPACE / entry['rules_file']
+    if not rules_path.is_file():
+        return JSONResponse({'error': 'rules file missing'}, status_code=404)
+    md = rules_path.read_text(encoding='utf-8')
+    return {'game_id': game_id, 'name': entry['name'], 'markdown': md}
+
+
 # ── 广播工具 ──────────────────────────────────────────────────────────────────
 
 async def _broadcast_room(room):

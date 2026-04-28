@@ -33,8 +33,9 @@ gameplatform/
     │       ├── __init__.py
     │       └── plugin.py   GAME_CLASS = MyGame
     └── static/
-        ├── index.html      单页面应用骨架
-        ├── lobby.js        大厅逻辑、WebSocket 核心、房间 UI、计时器
+        ├── index.html      SPA 骨架（#home / #lobby / #rules / #room-waiting / #game-wrap）
+        ├── lobby.js        大厅逻辑、WebSocket 核心、首页/规则页、计时器
+        ├── marked.min.js   Markdown 渲染库（本地提供，避免 CDN 依赖）
         └── games/
             └── <game_id>.js  游戏渲染器类
 ```
@@ -48,6 +49,7 @@ gameplatform/
 - 维护全局 `RoomRegistry` 和事件循环引用
 - 每条 WebSocket 消息经 `t = data.get('type')` 路由到对应处理块
 - 游戏开始时在 `_start_game()` 中创建 `NetBridge`、注入 game、启动 daemon 线程
+- REST API：`GET /api/games`（游戏列表）、`GET /api/rules/{game_id}`（规则 markdown）
 
 ### `room.py`
 - `RoomMember`：单个成员（ws / name / player_idx / connected / is_ai）

@@ -117,6 +117,7 @@ function renderGameList(games) {
   _gameListReady = true;
   selectedGame = _gamesData.length ? _gamesData[0].id : null;
   _updateCreateAvailability();
+  _updateHomeStats();
 }
 
 /* ── 创建 / 加入 ────────────────────────────────────────────────────────── */
@@ -326,7 +327,7 @@ function _loadGameScript(gameId) {
   if (_loadedScripts[gameId]) return _loadedScripts[gameId];
   const p = new Promise((resolve, reject) => {
     const s = document.createElement('script');
-    s.src = `/static/games/${gameId}.js?v=1777360000`;
+    s.src = `/static/games/${gameId}.js?v=1777580001`;
     s.onload = resolve;
     s.onerror = reject;
     document.head.appendChild(s);
@@ -461,7 +462,7 @@ function _getPlayerName(playerIdx) {
 
 /* ── 工具 ───────────────────────────────────────────────────────────────── */
 function showSection(id) {
-  ['lobby', 'room-waiting', 'game-wrap'].forEach(s => {
+  ['home', 'lobby', 'room-waiting', 'game-wrap', 'rules'].forEach(s => {
     const el = document.getElementById(s);
     if (el) el.style.display = s === id ? (id === 'game-wrap' ? 'block' : '') : 'none';
     if (el) el.classList.toggle('hidden', s !== id);
@@ -489,4 +490,124 @@ function returnToRoom() {
   // 服务端会广播 room(started=false)，handleRoom 会切换到等待室
 }
 
+/* ── 首页 / 规则页 ─────────────────────────────────────────────────────── */
+function showHome() {
+  showSection('home');
+  // 如果 WS 已连接并有游戏数据，更新首页统计
+  _updateHomeStats();
+}
+
+function _updateHomeStats() {
+  const el = document.getElementById('home-game-count');
+  if (el && _gamesData.length) el.textContent = _gamesData.length;
+}
+
+function enterLobby() {
+  showSection('lobby');
+  if (!ws || ws.readyState > 1) connect();
+}
+
+let _rulesGames = null;
+let _activeRuleId = null;
+
+async function showRules() {
+  showSection('rules');
+  const list = document.getElementById('rules-game-list');
+  if (_rulesGames) { _renderRulesCards(list); return; }
+  list.innerHTML = '<div style="color:var(--muted)">加载游戏列表…</div>';
+  try {
+    const res = await fetch('/api/games');
+    _rulesGames = await res.json();
+    _renderRulesCards(list);
+  } catch (e) {
+    list.innerHTML = '<div style="color:var(--danger)">加载失败：' + e.message + '</div>';
+  }
+}
+
+function _renderRulesCards(container) {
+  container.innerHTML = '';
+  _rulesGames.forEach(g => {
+    const card = document.createElement('div');
+    card.className = 'rule-card' + (g.id === _activeRuleId ? ' active' : '');
+    card.innerHTML = '<h3>' + g.name + '</h3><small>' + g.min_players + '–' + g.max_players + ' 人</small>';
+    card.onclick = () => loadRule(g.id);
+    container.appendChild(card);
+  });
+}
+
+function _simpleMd(md) {
+  // 轻量 markdown→HTML：标题、粗体、行内代码、链接、列表、表格、引用、分割线、段落
+  let html = md
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+    .replace(/^---+$/gm, '<hr>')
+    .replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" style="color:var(--accent)">$1</a>');
+  // 表格
+  html = html.replace(/(^\|.+\|$\n?)+/gm, function(block) {
+    const rows = block.trim().split('\n').filter(r => r.trim());
+    if (rows.length < 2) return block;
+    const sep = rows[1];
+    if (!/^[\s|:-]+$/.test(sep)) return block;
+    const hdr = rows[0].split('|').filter(c => c.trim()).map(c => '<th>' + c.trim() + '</th>').join('');
+    const body = rows.slice(2).map(r => {
+      const cells = r.split('|').filter(c => c.trim()).map(c => '<td>' + c.trim() + '</td>').join('');
+      return '<tr>' + cells + '</tr>';
+    }).join('');
+    return '<table><thead><tr>' + hdr + '</tr></thead><tbody>' + body + '</tbody></table>';
+  });
+  // 无序列表
+  html = html.replace(/(^- .+$\n?)+/gm, function(block) {
+    const items = block.trim().split('\n').map(l => '<li>' + l.replace(/^- /, '') + '</li>').join('');
+    return '<ul>' + items + '</ul>';
+  });
+  // 有序列表
+  html = html.replace(/(^\d+\. .+$\n?)+/gm, function(block) {
+    const items = block.trim().split('\n').map(l => '<li>' + l.replace(/^\d+\.\s*/, '') + '</li>').join('');
+    return '<ol>' + items + '</ol>';
+  });
+  // 代码块
+  html = html.replace(/```[\s\S]*?```/g, function(block) {
+    const inner = block.replace(/^```\w*\n?/, '').replace(/\n?```$/, '');
+    return '<pre><code>' + inner + '</code></pre>';
+  });
+  // 段落（连续非空行）
+  html = html.replace(/^(?!<[a-z])(\S.+)$/gm, '<p>$1</p>');
+  // 合并相邻 blockquote
+  html = html.replace(/<\/blockquote>\s*<blockquote>/g, '<br>');
+  return html;
+}
+
+async function loadRule(gameId) {
+  _activeRuleId = gameId;
+  document.querySelectorAll('#rules-game-list .rule-card').forEach((c, i) => {
+    c.classList.toggle('active', _rulesGames[i] && _rulesGames[i].id === gameId);
+  });
+  const content = document.getElementById('rule-content');
+  const loading = document.getElementById('rule-loading');
+  content.style.display = 'none';
+  loading.style.display = '';
+  try {
+    const res = await fetch('/api/rules/' + encodeURIComponent(gameId));
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    // 优先用 marked，不可用时用内置简易渲染
+    if (typeof marked !== 'undefined' && marked.parse) {
+      content.innerHTML = marked.parse(data.markdown);
+    } else {
+      content.innerHTML = _simpleMd(data.markdown);
+    }
+    content.style.display = 'block';
+  } catch (e) {
+    content.innerHTML = '<p style="color:var(--danger)">加载规则失败：' + e.message + '</p>';
+    content.style.display = 'block';
+  }
+  loading.style.display = 'none';
+}
+
+showHome();
 connect();

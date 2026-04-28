@@ -116,7 +116,7 @@ if (typeof _RENDERERS !== 'undefined') _RENDERERS['mygame'] = MyGameRenderer;
 - [ ] 游戏 repo：`online/adapter.py`（`class MyGame(AbstractGame)`）
 - [ ] `framework/games/<id>/__init__.py`（空文件）
 - [ ] `framework/games/<id>/plugin.py`（`GAME_CLASS = MyGame`）
-- [ ] `framework/games/__init__.py`：在 `_GAME_REGISTRY` 中添加条目（含 name / min_players / max_players / cover / module）
+- [ ] `framework/games/__init__.py`：在 `_GAME_REGISTRY` 中添加条目（含 name / min_players / max_players / cover / module / rules_file）
 - [ ] `framework/static/games/<id>.js`（`class MyGameRenderer`，**文件末尾** `_RENDERERS['<id>'] = MyGameRenderer;`）
 - [ ] 服务器启动命令中设置 `<GAME>_PATH` 环境变量
 
@@ -140,16 +140,22 @@ if (typeof _RENDERERS !== 'undefined') _RENDERERS['mygame'] = MyGameRenderer;
 
 ```
 gameplatform/
-├── README.md               本文件
-├── SKILL.md                开发规范（本文件）
+├── README.md
 ├── pyproject.toml
+├── skill/                  开发参考文档
 └── framework/
     ├── core/               抽象接口（不含游戏逻辑）
     ├── room.py             房间管理
     ├── net_bridge.py       WebSocket 桥实现
-    ├── server.py           FastAPI 服务器
-    ├── games/              游戏插件注册表
-    │   └── manila/
+    ├── server.py           FastAPI 服务器 + REST API（/api/games, /api/rules/）
+    ├── games/              游戏插件注册表（含 rules_file 字段）
+    │   ├── manila/
+    │   ├── avalon/
+    │   ├── incan_gold/
+    │   └── transcard/
     └── static/             Web 前端
-        └── games/
+        ├── index.html      SPA 骨架（#home / #lobby / #rules / #room-waiting / #game-wrap）
+        ├── lobby.js        大厅核心 + 首页/规则页逻辑
+        ├── marked.min.js   Markdown 渲染库（本地）
+        └── games/          各游戏渲染器 JS
 ```

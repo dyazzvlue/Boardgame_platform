@@ -11,6 +11,7 @@ _GAME_REGISTRY: dict[str, dict] = {
         'min_players': 3,
         'max_players': 5,
         'cover': 'manila_cover.png',
+        'rules_file': 'Manila/rules.md',
     },
     'avalon': {
         'module': 'framework.games.avalon.plugin',
@@ -18,6 +19,7 @@ _GAME_REGISTRY: dict[str, dict] = {
         'min_players': 5,
         'max_players': 10,
         'cover': '',
+        'rules_file': 'Avalon/rules.md',
     },
     'incan_gold': {
         'module': 'framework.games.incan_gold.plugin',
@@ -25,6 +27,7 @@ _GAME_REGISTRY: dict[str, dict] = {
         'min_players': 3,
         'max_players': 8,
         'cover': '',
+        'rules_file': 'IncanGold/rules.md',
     },
     'transcard': {
         'module': 'framework.games.transcard.plugin',
@@ -32,6 +35,7 @@ _GAME_REGISTRY: dict[str, dict] = {
         'min_players': 3,
         'max_players': 6,
         'cover': '',
+        'rules_file': 'TransCard/rule.md',
     },
 }
 _cache: dict[str, type] = {}

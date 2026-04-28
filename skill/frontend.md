@@ -93,10 +93,32 @@ function leaveGame() {
 ## 页面 Section 切换
 
 ```javascript
-showSection('lobby')         // 游戏大厅
+showSection('home')          // 首页（默认落地页）
+showSection('lobby')         // 游戏大厅（创建/加入房间）
 showSection('room-waiting')  // 等待室
 showSection('game-wrap')     // 游戏界面
+showSection('rules')         // 游戏规则页
 ```
+
+### 首页与规则页
+
+页面加载后默认显示 `#home`（个人站点风格），`connect()` 在后台建立 WS 连接。
+
+| 函数 | 说明 |
+|------|------|
+| `showHome()` | 切换到首页，更新游戏数量统计 |
+| `enterLobby()` | 切换到大厅；若 WS 未连接则自动 `connect()` |
+| `showRules()` | 切换到规则页，fetch `/api/games` 渲染游戏卡片列表 |
+| `loadRule(gameId)` | fetch `/api/rules/{gameId}`，用 `marked.parse()` 或内置 `_simpleMd()` 渲染 |
+
+### REST API（规则页使用）
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/games` | GET | 返回游戏列表 JSON（同 WS `game_list` 的 `games` 数组） |
+| `/api/rules/{game_id}` | GET | 返回 `{game_id, name, markdown}`；404 表示无规则文件 |
+
+规则 markdown 来自各游戏 repo 的 `rules.md`（或 `rule.md`），路径在 `_GAME_REGISTRY` 的 `rules_file` 字段中配置。
 
 ---
 
@@ -132,9 +154,11 @@ showSection('game-wrap')     // 游戏界面
 
 引入新游戏脚本时需加版本查询串（Unix 时间戳）破坏浏览器缓存：
 ```html
-<script src="/static/games/mygame.js?v=1773881881000"></script>
+<script src="/static/games/mygame.js?v=1777580001"></script>
 ```
 每次修改文件后**更新版本号**（同步更新 `index.html` 和 `lobby.js` 中的引用）。
+
+第三方库（如 `marked.min.js`）也放在 `static/` 下本地提供，避免 CDN 依赖。
 
 **路径必须使用绝对路径**（以 `/` 开头）。相对路径 `static/games/...` 在 URL
 包含子路径时会解析到错误位置导致 404。
@@ -170,3 +194,12 @@ showSection('game-wrap')     // 游戏界面
 7. **`initGameUI` 重入**：若快速连续收到两条 `room(started=true)` 消息，
    `initGameUI` 被调用两次，第二次会重置 `_msgQueue=[]` 清空缓冲消息。
    **修复**：入口加 `if (_gameLoading) return;` 防止重入。
+
+8. **CSS `display:none` 与 JS `el.style.display = ''` 冲突**：若 CSS 对元素设了
+   `display:none`，JS 中用 `el.style.display = ''` 清除 inline style 后会回退到
+   CSS 的 `none`，元素仍然不可见。**修复**：显式设为 `el.style.display = 'block'`。
+
+9. **CDN 不可达导致库未定义**：外部 CDN（如 `cdn.jsdelivr.net`）在企业网络/代理
+   环境下可能无法访问，导致库（如 `marked`）未加载。
+   **修复**：将第三方库下载到 `static/` 本地提供；JS 中用 `typeof lib !== 'undefined'`
+   做可用性检测后再调用，并提供 fallback。
