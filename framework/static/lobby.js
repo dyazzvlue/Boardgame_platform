@@ -339,6 +339,7 @@ function _loadGameScript(gameId) {
 
 /* ── 游戏 UI 初始化 ──────────────────────────────────────────────────────── */
 async function initGameUI(gameId) {
+  if (_gameLoading) return;          // 防止重入
   _resetPostGameBtns();
   _gameLoading = true;
   _msgQueue = [];
@@ -371,7 +372,9 @@ async function initGameUI(gameId) {
 
   // 回放加载期间缓冲的消息
   const queued = _msgQueue.splice(0);
-  for (const m of queued) handleMsg(m);
+  for (const m of queued) {
+    try { handleMsg(m); } catch (e) { console.error('[replay] 回放消息异常:', m.type, e); }
+  }
 }
 
 /* ── 日志 ───────────────────────────────────────────────────────────────── */

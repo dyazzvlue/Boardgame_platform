@@ -59,31 +59,37 @@ class TransCardRenderer {
   // ── 框架回调 ───────────────────────────────────────────────
 
   onState(ctx) {
-    this.state = ctx;
-    this._renderInfo();
-    this._renderPlayers();
+    try {
+      this.state = ctx;
+      this._renderInfo();
+      this._renderPlayers();
+    } catch (e) { console.error('[TransCard] onState error:', e); }
   }
 
   onRequest(playerIdx, kind, data) {
-    if (playerIdx !== this.myIdx) {
-      this.actionDiv.innerHTML = `<span style="color:#888">等待玩家操作...</span>`;
-      return;
-    }
-    // 更新手牌
-    if (data && data.hand) {
-      this.myHand = data.hand;
-      this.selectedUids.clear();
-      this._renderHand();
-    }
-    this._renderActionUI(kind, data);
+    try {
+      if (playerIdx !== this.myIdx) {
+        this.actionDiv.innerHTML = `<span style="color:#888">等待玩家操作...</span>`;
+        return;
+      }
+      // 更新手牌
+      if (data && data.hand) {
+        this.myHand = data.hand;
+        this.selectedUids.clear();
+        this._renderHand();
+      }
+      this._renderActionUI(kind, data);
+    } catch (e) { console.error('[TransCard] onRequest error:', e); }
   }
 
   onGameOver(result) {
-    this.actionDiv.innerHTML = '<h3 style="color:#f0c040">游戏结束！</h3>' +
-      `<div style="color:#aaa;margin:.3rem 0">${result.reason || ''}</div>` +
-      (result.rankings || []).map((r,i) =>
-        `<div style="color:${i===0?'#f0c040':'#eee'}">${r.rank}. ${r.name} — ${r.score}分 (${r.combos}个牌型, 剩余${r.hand_remaining}张)</div>`
-      ).join('');
+    try {
+      this.actionDiv.innerHTML = '<h3 style="color:#f0c040">游戏结束！</h3>' +
+        `<div style="color:#aaa;margin:.3rem 0">${result.reason || ''}</div>` +
+        (result.rankings || []).map((r,i) =>
+          `<div style="color:${i===0?'#f0c040':'#eee'}">${r.rank}. ${r.name} — ${r.score}分 (${r.combos}个牌型, 剩余${r.hand_remaining}张)</div>`
+        ).join('');
+    } catch (e) { console.error('[TransCard] onGameOver error:', e); }
   }
 
   // ── 信息渲染 ───────────────────────────────────────────────

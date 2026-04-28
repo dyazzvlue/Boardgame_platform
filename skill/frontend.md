@@ -160,3 +160,13 @@ showSection('game-wrap')     // 游戏界面
    `_gameLoading` 不会重置，所有后续 `state`/`request`/`game_over` 消息
    进入 `_msgQueue` 永不回放，游戏界面卡死。
    **修复**：`new RendererCls(...)` 放在 try-catch 内，`_gameLoading = false` 无条件执行。
+
+6. **队列回放中异常中断后续消息**：`initGameUI` 回放 `_msgQueue` 时，若某条
+   `state` 消息触发的 `onState()` 抛出异常，`for` 循环中断，后面的 `request`
+   消息永远不会被处理。表现为：信息区和玩家区正常显示，但手牌和操作按钮不出现。
+   **修复**：回放循环中每条消息用 `try-catch` 包裹；渲染器的 `onState`/`onRequest`/
+   `onGameOver` 也建议加 try-catch 并 `console.error`，避免静默失败。
+
+7. **`initGameUI` 重入**：若快速连续收到两条 `room(started=true)` 消息，
+   `initGameUI` 被调用两次，第二次会重置 `_msgQueue=[]` 清空缓冲消息。
+   **修复**：入口加 `if (_gameLoading) return;` 防止重入。
