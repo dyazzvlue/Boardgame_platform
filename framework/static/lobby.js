@@ -327,7 +327,7 @@ function _loadGameScript(gameId) {
   if (_loadedScripts[gameId]) return _loadedScripts[gameId];
   const p = new Promise((resolve, reject) => {
     const s = document.createElement('script');
-    s.src = `/static/games/${gameId}.js?v=1777580001`;
+    s.src = `/static/games/${gameId}.js?v=1777447920`;
     s.onload = resolve;
     s.onerror = reject;
     document.head.appendChild(s);
