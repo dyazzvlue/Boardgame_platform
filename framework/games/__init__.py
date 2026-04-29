@@ -37,6 +37,14 @@ _GAME_REGISTRY: dict[str, dict] = {
         'cover': '',
         'rules_file': 'TransCard/rule.md',
     },
+    'guandan': {
+        'module': 'framework.games.guandan.plugin',
+        'name': '掼蛋',
+        'min_players': 4,
+        'max_players': 4,
+        'cover': '',
+        'rules_file': 'GuanDan/rules.md',
+    },
 }
 _cache: dict[str, type] = {}
 
