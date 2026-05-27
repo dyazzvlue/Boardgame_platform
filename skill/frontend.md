@@ -1,205 +1,201 @@
 # GamePlatform — 前端开发规范
 
-## 文件结构
+## 技术栈
+
+- **Vue 3** (Composition API)
+- **Vue Router 4** (Hash mode)
+- **Pinia** (状态管理)
+- **Vite 8** (构建工具)
+- **Marked** (Markdown 渲染)
+
+---
+
+## 目录结构
 
 ```
-framework/static/
-├── index.html          骨架 HTML，包含各 section 和静态样式
-├── lobby.js            大厅核心逻辑（WebSocket、房间 UI、工具函数）
-└── games/
-    └── <game_id>.js    各游戏的渲染器类
+frontend/
+├── package.json
+├── vite.config.js          输出到 ../framework/static/dist
+├── index.html
+└── src/
+    ├── main.js             createApp + 插件安装
+    ├── router.js           路由表
+    ├── style.css           全局样式
+    ├── stores/
+    │   └── game.js         Pinia store（WebSocket + 游戏状态）
+    ├── components/
+    │   ├── blog/           BlogPostCard.vue, Pagination.vue
+    │   └── games/          每个游戏一个 .vue 渲染器
+    └── views/
+        ├── BlogHome.vue    博客首页
+        ├── PostDetail.vue  文章详情
+        ├── CategoryView.vue 分类页
+        ├── admin/          管理后台（Login, Dashboard, PostEditor）
+        └── game/
+            ├── GameLobby.vue   大厅（游戏列表 + 创建/加入房间）
+            └── GameRoom.vue    房间（等待室 + 游戏进行）
 ```
 
 ---
 
-## lobby.js 全局状态
+## Pinia Store (`stores/game.js`)
 
-| 变量 | 类型 | 说明 |
+### 状态
+
+| 字段 | 类型 | 说明 |
 |------|------|------|
-| `ws` | WebSocket | 当前 WebSocket 连接 |
-| `myIdx` | number | 本玩家座位号（-1 = 观战或未入座） |
-| `selectedGame` | string | 当前选中的游戏 ID |
-| `currentRoom` | object | 最新的房间状态（来自 `room` 消息） |
-| `gameRenderer` | object | 当前游戏渲染器实例 |
+| `ws` | WebSocket | 当前连接 |
+| `connected` | boolean | 连接状态 |
+| `myIdx` | number | 本玩家座位号（-1 = 未入座） |
+| `games` | array | 可用游戏列表 |
+| `room` | object | 当前房间状态 |
+| `gameState` | object | 最新游戏 STATE |
+| `request` | object | 当前待响应的 REQUEST |
+| `logs` | array | 游戏日志 |
+| `gameOver` | object | 游戏结束数据 |
+| `countdown` | object | 满员倒计时 |
 
----
+### 动作
 
-## 消息路由 handleMsg(msg)
-
-| type | 行为 |
+| 方法 | 说明 |
 |------|------|
-| `game_list` | 渲染游戏卡片列表 |
-| `room` | 更新 `currentRoom`；未开始→等待室；已开始→初始化游戏 UI |
-| `countdown` | 显示/更新满员倒计时 banner |
-| `state` | 调用 `gameRenderer.onState()`，**清除回合计时器** |
-| `request` | 调用 `gameRenderer.onRequest()`，**启动回合计时器** |
-| `log` | 追加日志到 `#log-panel` |
-| `game_over` | 调用 `gameRenderer.onGameOver()`，**清除回合计时器** |
-| `error` | 弹出错误提示 |
+| `connect()` | 建立 WebSocket 连接 |
+| `send(msg)` | 发送 JSON 消息 |
+| `respond(kind, value)` | 发送 response 消息 |
+| `createRoom(opts)` | 创建房间 |
+| `joinRoom(roomId, name, password)` | 加入房间 |
+| `startGame()` | 手动开始 |
+| `addAi()` | 添加 AI |
+| `leaveGame()` | 离开游戏（AI 接管） |
+| `returnRoom()` | 返回大厅 |
+
+### 消息路由
+
+收到 WebSocket 消息后按 `type` 字段分发：
+
+| type | 处理 |
+|------|------|
+| `game_list` | 更新 `games` |
+| `room` | 更新 `room` + `myIdx` |
+| `state` | 更新 `gameState`，清除 `request` |
+| `request` | 更新 `request` |
+| `log` | 追加到 `logs` |
+| `game_over` | 设置 `gameOver` |
+| `countdown` | 设置 `countdown` |
+| `error` | 弹出错误信息 |
 
 ---
 
-## 渲染器接口规范
+## 游戏渲染器组件
+
+每个游戏在 `src/components/games/` 下有一个 `.vue` 文件：
+
+```
+Manila.vue
+Avalon.vue
+IncanGold.vue
+GuanDan.vue
+TransCard.vue
+```
+
+### 组件接口
+
+```vue
+<script setup>
+import { useGameStore } from '@/stores/game'
+const store = useGameStore()
+
+// store.gameState  — 游戏状态（Per-Player，只含本玩家可见信息）
+// store.request   — 当前请求 { idx, kind, data }
+// store.myIdx     — 本玩家座位号
+// store.room      — 房间信息（players 列表等）
+
+// 响应操作：
+// store.respond(kind, value)
+</script>
+```
+
+### 注册
+
+`GameRoom.vue` 中维护渲染器映射：
 
 ```javascript
-class MyGameRenderer {
-    constructor(container, myIdx, respond) {
-        // container: HTMLElement
-        // myIdx: 本玩家座位号（观战者为 -1）
-        // respond: (kind, value) => void
-    }
-    onState(ctx)               {}
-    onRequest(idx, kind, data) {}
-    onGameOver(result)         {}
+const renderers = {
+    manila: Manila,
+    avalon: Avalon,
+    incan_gold: IncanGold,
+    guandan: GuanDan,
+    transcard: TransCard,
 }
 ```
 
-在 `lobby.js` 的 `initGameUI()` 中注册，在 `index.html` 中引入对应 `<script>` 标签。
+通过 `room.game_id` 动态选择对应组件：
 
----
-
-## 回合计时器 API
-
-`request` 消息到来时自动启动，`state` / `game_over` 时自动清除，**渲染器通常无需干预**。
-
-| 函数 | 说明 |
-|------|------|
-| `_startTurnTimer(playerIdx, timeoutSecs)` | 启动倒计时；`0` = 仅显示玩家名 |
-| `_clearTurnTimer()` | 清除计时器和显示 |
-| `_getPlayerName(playerIdx)` | 从 `currentRoom.players` 查玩家名 |
-
-计时器显示在 `#turn-timer`（`#game-top-bar` 内），剩余 ≤5s 变红。
-
----
-
-## 离开游戏
-
-游戏界面顶部工具栏 `#game-top-bar`：
-- 左侧：`#turn-timer` — 回合倒计时
-- 右侧：🚪「离开游戏」按钮 → 调用 `leaveGame()`
-
-```javascript
-function leaveGame() {
-    if (!confirm('确认离开游戏？你的位置将由 AI 接管。')) return;
-    ws.send(JSON.stringify({ type: 'leave_game' }));
-    _clearTurnTimer();
-    gameRenderer = null;
-    showSection('lobby');
-}
+```vue
+<component :is="renderers[room.game_id]" v-if="room.started" />
 ```
 
 ---
 
-## 页面 Section 切换
+## 路由表
 
-```javascript
-showSection('home')          // 首页（默认落地页）
-showSection('lobby')         // 游戏大厅（创建/加入房间）
-showSection('room-waiting')  // 等待室
-showSection('game-wrap')     // 游戏界面
-showSection('rules')         // 游戏规则页
-```
-
-### 首页与规则页
-
-页面加载后默认显示 `#home`（个人站点风格），`connect()` 在后台建立 WS 连接。
-
-| 函数 | 说明 |
-|------|------|
-| `showHome()` | 切换到首页，更新游戏数量统计 |
-| `enterLobby()` | 切换到大厅；若 WS 未连接则自动 `connect()` |
-| `showRules()` | 切换到规则页，fetch `/api/games` 渲染游戏卡片列表 |
-| `loadRule(gameId)` | fetch `/api/rules/{gameId}`，用 `marked.parse()` 或内置 `_simpleMd()` 渲染 |
-
-### REST API（规则页使用）
-
-| 端点 | 方法 | 说明 |
+| 路径 | 组件 | 说明 |
 |------|------|------|
-| `/api/games` | GET | 返回游戏列表 JSON（同 WS `game_list` 的 `games` 数组） |
-| `/api/rules/{game_id}` | GET | 返回 `{game_id, name, markdown}`；404 表示无规则文件 |
-
-规则 markdown 来自各游戏 repo 的 `rules.md`（或 `rule.md`），路径在 `_GAME_REGISTRY` 的 `rules_file` 字段中配置。
-
----
-
-## 创建房间表单字段
-
-| 元素 ID | 说明 | 协议字段 |
-|---------|------|---------|
-| `create-name` | 玩家名 | `name` |
-| `create-count` | 人数 | `player_count` |
-| `create-pwd` | 密码 | `password` |
-| `create-timeout` | 回合时限 | `turn_timeout`（30 / 60 / 0，默认 30） |
+| `/` | BlogHome | 博客首页 |
+| `/post/:id` | PostDetail | 文章详情 |
+| `/category/:id` | CategoryView | 分类页 |
+| `/game` | GameLobby | 游戏大厅 |
+| `/game/room` | GameRoom | 游戏房间 |
+| `/admin/login` | AdminLogin | 管理员登录 |
+| `/admin` | AdminDashboard | 管理后台 |
+| `/admin/post/new` | PostEditor | 新建文章 |
+| `/admin/post/:id` | PostEditor | 编辑文章 |
 
 ---
 
-## 日志 style 约定
+## 构建与部署
 
-`_autoStyle()` 按文本内容自动推断：
-
-| style | 触发正则 |
-|-------|---------|
-| `header` | `/^\s*第\s*\d+\s*轮/` |
-| `section` | `/^──/` 或 `/^▌/` 或 `/^►/` |
-| `warn` | `/⚠\|warn\|断线\|超时\|离开\|异常/` |
-| `ai` | `/AI\|🤖/` |
-| `bid` | `/港务长\|竞拍\|bid/` |
-| `deploy` | `/部署\|工人\|派遣/` |
-| `profit` | `/利润\|收益\|入账/` |
-| `dice` | `/掷骰子\|骰子/` |
-
----
-
-## 静态资源版本号
-
-引入新游戏脚本时需加版本查询串（Unix 时间戳）破坏浏览器缓存：
-```html
-<script src="/static/games/mygame.js?v=1777580001"></script>
+```bash
+cd frontend
+npm install          # 安装依赖
+npm run build        # 构建，输出到 ../framework/static/dist
+npm run dev          # 开发模式（HMR，代理 API 到后端 8000 端口）
 ```
-每次修改文件后**更新版本号**（同步更新 `index.html` 和 `lobby.js` 中的引用）。
 
-第三方库（如 `marked.min.js`）也放在 `static/` 下本地提供，避免 CDN 依赖。
+Vite 配置关键点：
+- `base: './'` — 相对路径，适配任意部署根
+- `build.outDir: '../framework/static/dist'` — 直接输出到后端静态目录
+- 开发模式下 proxy `/api` 和 `/ws` 到 `http://localhost:8000`
 
-**路径必须使用绝对路径**（以 `/` 开头）。相对路径 `static/games/...` 在 URL
-包含子路径时会解析到错误位置导致 404。
+---
+
+## 开发流程
+
+1. 启动后端：`bash tools/start.sh --public --reload`
+2. 启动前端开发服务器：`cd frontend && npm run dev`
+3. 访问 Vite dev server（通常 `http://localhost:5173`）
+4. 前端通过 proxy 与后端 WebSocket/API 通信
+5. 修改 `.vue` 文件后自动热更新
+
+**生产部署**时只需构建前端（`npm run build`），后端直接服务 `dist/` 中的文件。
+
+---
+
+## 添加新游戏渲染器
+
+1. 创建 `src/components/games/MyGame.vue`
+2. 在 `GameRoom.vue` 的 `renderers` 映射中添加 `my_game: MyGame`
+3. 根据该游戏的 `STATE` 和 `REQUEST` 格式实现 UI
+
+渲染器只需读取 `store.gameState` / `store.request` 并调用 `store.respond(kind, value)`，
+无需关心 WebSocket 连接管理。
 
 ---
 
 ## 常见坑
 
-1. **`myIdx` 更新时机**：仅当消息携带 `your_idx` 字段时才更新，
-   广播的 `room` 消息对每个客户端携带各自的 `your_idx`
-
-2. **`gameRenderer` 空指针防御**：`handleMsg` 中所有调用均有 `gameRenderer &&` 短路，
-   渲染器不必担心被过早调用
-
-3. **`respond` 闭包**：在 `initGameUI` 内创建，绑定最新的 `ws` 引用，
-   不要在外部缓存此函数
-
-4. **`_loadedScripts` 缓存 rejected promise**：`_loadGameScript` 若不清理失败的
-   Promise，一旦预加载失败（代理 403、网络抖动），该游戏界面将永远无法加载。
-   **修复**：创建 Promise 后立即 `.catch(() => { delete _loadedScripts[gameId]; })`。
-
-5. **`_gameLoading` 永久为 true**：渲染器构造函数若抛异常且没有 try-catch，
-   `_gameLoading` 不会重置，所有后续 `state`/`request`/`game_over` 消息
-   进入 `_msgQueue` 永不回放，游戏界面卡死。
-   **修复**：`new RendererCls(...)` 放在 try-catch 内，`_gameLoading = false` 无条件执行。
-
-6. **队列回放中异常中断后续消息**：`initGameUI` 回放 `_msgQueue` 时，若某条
-   `state` 消息触发的 `onState()` 抛出异常，`for` 循环中断，后面的 `request`
-   消息永远不会被处理。表现为：信息区和玩家区正常显示，但手牌和操作按钮不出现。
-   **修复**：回放循环中每条消息用 `try-catch` 包裹；渲染器的 `onState`/`onRequest`/
-   `onGameOver` 也建议加 try-catch 并 `console.error`，避免静默失败。
-
-7. **`initGameUI` 重入**：若快速连续收到两条 `room(started=true)` 消息，
-   `initGameUI` 被调用两次，第二次会重置 `_msgQueue=[]` 清空缓冲消息。
-   **修复**：入口加 `if (_gameLoading) return;` 防止重入。
-
-8. **CSS `display:none` 与 JS `el.style.display = ''` 冲突**：若 CSS 对元素设了
-   `display:none`，JS 中用 `el.style.display = ''` 清除 inline style 后会回退到
-   CSS 的 `none`，元素仍然不可见。**修复**：显式设为 `el.style.display = 'block'`。
-
-9. **CDN 不可达导致库未定义**：外部 CDN（如 `cdn.jsdelivr.net`）在企业网络/代理
-   环境下可能无法访问，导致库（如 `marked`）未加载。
-   **修复**：将第三方库下载到 `static/` 本地提供；JS 中用 `typeof lib !== 'undefined'`
-   做可用性检测后再调用，并提供 fallback。
+1. **Per-Player State**：`gameState` 只包含本玩家可见的信息，不同玩家看到的状态不同
+2. **request 清除时机**：收到新 `state` 时自动清除 `request`，渲染器无需手动清除
+3. **myIdx = -1**：观战者不会收到 `request`，但会收到 `state` 和 `log`
+4. **Hash 路由**：使用 `createWebHashHistory()`，避免服务端路由配置问题
+5. **Vite 缓存**：构建输出带 hash 文件名，无需手动管理缓存破坏

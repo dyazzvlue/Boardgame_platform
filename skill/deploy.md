@@ -11,77 +11,164 @@ Nginx（SSL 终止 + 反向代理 + 速率限制）
   ▼
 uvicorn / GamePlatform（仅本地监听）
   │
-  ├── /static     静态文件
-  ├── /           index.html
-  └── /ws         WebSocket 游戏逻辑
+  ├── /api/blog/*    博客 REST API
+  ├── /api/admin/*   管理后台 API
+  ├── /ws            WebSocket 游戏逻辑
+  ├── /assets/*      Vite 构建产物
+  └── /*             SPA fallback (dist/index.html)
 ```
 
 生产环境中 uvicorn 只监听 `127.0.0.1`，所有外部流量经 Nginx 进入。
 
 ---
 
-## 快速部署步骤
+## 环境要求
 
-### 1. 服务器基础环境
+| 组件 | 最低版本 | 说明 |
+|------|---------|------|
+| Python | 3.10+ | FastAPI + asyncio |
+| Node.js | 18+ | 前端构建 |
+| npm | 9+ | 随 Node.js 安装 |
+| Git | 2.x | 克隆代码 |
+| Nginx | 1.18+ | 反向代理（生产） |
+
+---
+
+## 一键部署
+
+使用自动部署脚本（适用于 Ubuntu/Debian）：
 
 ```bash
-# Ubuntu/Debian
-sudo apt update && sudo apt install -y nginx certbot python3-certbot-nginx ufw
+git clone https://github.com/dyazzvlue/Boardgame_platform.git gameplatform
+cd gameplatform
+bash tools/deploy.sh
+```
 
-# 防火墙：只开 22/80/443
+脚本会自动完成以下步骤：
+1. 检查 Python/Node.js 版本
+2. 创建 Python 虚拟环境并安装依赖
+3. 克隆所有游戏 repo
+4. 安装前端依赖并构建
+5. 初始化数据库
+6. 创建管理员账号（交互式输入）
+7. 生成 systemd 服务文件
+
+详见 `tools/deploy.sh` 源码。
+
+---
+
+## 手动部署步骤
+
+### 1. 系统依赖（Ubuntu/Debian）
+
+```bash
+sudo apt update && sudo apt install -y \
+    python3 python3-venv python3-pip \
+    nginx certbot python3-certbot-nginx \
+    git curl ufw
+
+# 安装 Node.js 20.x（通过 NodeSource）
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs
+
+# 防火墙
 sudo ufw allow OpenSSH
 sudo ufw allow 'Nginx Full'
 sudo ufw enable
 ```
 
-### 2. 克隆代码并安装依赖
+### 2. 克隆代码
 
 ```bash
 cd /srv
-git clone https://github.com/dyazzvlue/gameplatform.git
+git clone https://github.com/dyazzvlue/Boardgame_platform.git gameplatform
 cd gameplatform
-bash tools/fetch-games.sh          # 拉取游戏 repo
-pip install -r requirements.txt    # 安装锁定版本依赖
 ```
 
-### 3. 配置 Nginx
+### 3. Python 环境
 
 ```bash
-# 替换域名占位符
-sed 's/YOUR_DOMAIN/game.example.com/g' tools/nginx.conf \
-  | sudo tee /etc/nginx/sites-available/gameplatform
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+pip install -e .  # 安装框架本身（可选，方便 CLI 使用）
+```
 
-sudo ln -s /etc/nginx/sites-available/gameplatform \
-           /etc/nginx/sites-enabled/gameplatform
+### 4. 拉取游戏 repo
+
+```bash
+bash tools/fetch-games.sh
+```
+
+游戏 repo 会被克隆到 `gameplatform/` 的同级目录下。
+
+### 5. 构建前端
+
+```bash
+cd frontend
+npm install
+npm run build    # 输出到 ../framework/static/dist/
+cd ..
+```
+
+### 6. 初始化数据库
+
+```bash
+source .venv/bin/activate
+python -m framework init-db        # 创建 blog.db 及表结构
+python -m framework create-admin   # 交互式创建管理员账号
+```
+
+### 7. 配置 Nginx
+
+```nginx
+server {
+    listen 80;
+    server_name game.example.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /ws {
+        proxy_pass http://127.0.0.1:8000/ws;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 86400;
+    }
+}
+```
+
+```bash
+sudo ln -s /etc/nginx/sites-available/gameplatform /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
-### 4. 申请 SSL 证书（Let's Encrypt）
+### 8. SSL 证书
 
 ```bash
 sudo certbot --nginx -d game.example.com
-# certbot 会自动修改 nginx.conf 中的证书路径并重载
 ```
 
-### 5. 启动应用
-
-```bash
-cd /srv/gameplatform
-bash tools/start.sh         # 默认监听 127.0.0.1:8000
-```
-
-推荐用 systemd 管理进程：
+### 9. Systemd 服务
 
 ```ini
 # /etc/systemd/system/gameplatform.service
 [Unit]
-Description=GamePlatform
+Description=GamePlatform Server
 After=network.target
 
 [Service]
 User=www-data
 WorkingDirectory=/srv/gameplatform
-ExecStart=/usr/bin/bash /srv/gameplatform/tools/start.sh
+Environment=PATH=/srv/gameplatform/.venv/bin:/usr/bin:/bin
+ExecStart=/srv/gameplatform/.venv/bin/python -m uvicorn framework.server:app --host 127.0.0.1 --port 8000 --log-level warning
 Restart=on-failure
 RestartSec=5
 
@@ -96,24 +183,6 @@ sudo systemctl enable --now gameplatform
 
 ---
 
-## 安全措施一览
-
-本次实施的安全加固内容（开发阶段 → 生产就绪）：
-
-| 措施 | 实现位置 | 说明 |
-|------|---------|------|
-| HTTPS/WSS | `tools/nginx.conf` | Nginx SSL 终止，支持 TLSv1.2/1.3 |
-| 绑定本地地址 | `tools/start.sh` | 默认 `127.0.0.1`，不暴露到公网 |
-| 连接速率限制 | `tools/nginx.conf` | 每 IP 并发连接 ≤20，请求 ≤30/min |
-| 应用层限速 | `framework/server.py` | 每 IP 并发连接 ≤10，创建房间 ≤5/min |
-| 房间数上限 | `framework/server.py` | 全局 MAX_ROOMS=50 |
-| 输入校验 | `framework/server.py` | 所有字段长度截断 + 类型/范围检查 |
-| 密码 bcrypt 存储 | `framework/room.py` | 密码不以明文存储，用 bcrypt hash |
-| 异常不暴露 | `framework/server.py` | 客户端只收泛化错误，traceback 写服务端日志 |
-| 关闭目录列表 | `framework/server.py` | `StaticFiles(html=False)` |
-
----
-
 ## start.sh 参数说明
 
 | 参数 | 说明 |
@@ -122,80 +191,7 @@ sudo systemctl enable --now gameplatform
 | `--public` | 监听 `0.0.0.0:8000`，用于局域网直接访问（测试/开发） |
 | `--port N` | 指定端口 |
 | `--reload` | 开启 uvicorn 热重载（仅开发） |
-| `--host IP` | 手动指定绑定地址，覆盖默认 |
-
-> `start.sh` 启动 uvicorn 时携带 `--log-level warning`，抑制 INFO 级别的请求日志
-> 噪声（`GET /favicon.ico`、heartbeat 等），只显示 WARNING 及以上。
-
----
-
-## 常见部署问题
-
-### WebSocket URL 必须与页面协议匹配
-
-`lobby.js` 使用协议感知的 URL，**不要将 WS URL 硬编码为 `wss://`**：
-
-```javascript
-// ✅ 正确：自动匹配 http → ws， https → wss
-const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
-const ws = new WebSocket(`${wsProto}://${location.host}/ws`);
-
-// ❌ 错误：在 HTTP 下会连接失败
-const ws = new WebSocket(`wss://${location.host}/ws`);
-```
-
-### favicon.ico 404 抑制
-
-服务器为 `GET /favicon.ico` 返回 `204 No Content`（路由已在 `server.py` 中添加），
-避免每次连接在日志中产生 404 错误。
-
-### Nginx 502 Bad Gateway
-uvicorn 未启动或监听地址不对。
-```bash
-systemctl status gameplatform
-curl http://127.0.0.1:8000/    # 应返回 HTML
-```
-
-### WebSocket 连接被断开（1006）
-检查 Nginx `proxy_read_timeout` 是否设为足够大的值（nginx.conf 已设 86400）。
-
-### 首次打开页面时提示"请选择游戏"
-这通常不是游戏配置缺失，而是浏览器已经拿到 HTML，但 WebSocket 尚未完成连接，或 `game_list` 首包尚未返回。
-
-现版本大厅已加入加载态保护：
-- 未建立 WebSocket 连接前，"创建房间"按钮保持禁用
-- 连接成功但 `game_list` 未返回前，状态文案显示"正在加载游戏列表…"
-- 断线重连时，按钮会再次禁用，避免旧状态残留
-
-若线上仍明显等待过久，应重点检查反向代理对 `/ws` 的转发是否正确：
-```bash
-# 1. 应用本机直连应快速返回首页
-curl http://127.0.0.1:8000/
-
-# 2. 用浏览器开发者工具查看 /ws 是否成功升级为 WebSocket
-#    重点关注 101 Switching Protocols、握手耗时、是否反复重连
-
-# 3. 查看 Nginx 最终生效配置
-sudo nginx -T | grep -n "location /ws\|proxy_set_header Upgrade\|proxy_set_header Connection\|proxy_http_version\|proxy_read_timeout"
-```
-
-Nginx 至少应满足：
-- `proxy_http_version 1.1`
-- `proxy_set_header Upgrade $http_upgrade`
-- `proxy_set_header Connection "upgrade"`
-- `proxy_read_timeout` 足够大
-
-### SSL 证书过期
-```bash
-sudo certbot renew --dry-run   # 测试续期
-sudo certbot renew             # 实际续期
-```
-
-### 密码房间无法加入（加密升级后）
-bcrypt 校验是计算密集型操作（约 100ms/次），这是正常的。如需提速可降低 bcrypt cost：
-```python
-# room.py: 将 gensalt() 改为 gensalt(rounds=10)（默认即为 12）
-```
+| `--host IP` | 手动指定绑定地址 |
 
 ---
 
@@ -203,8 +199,53 @@ bcrypt 校验是计算密集型操作（约 100ms/次），这是正常的。如
 
 ```bash
 cd /srv/gameplatform
+source .venv/bin/activate
 git pull --ff-only
 bash tools/fetch-games.sh      # 同步游戏 repo
 pip install -r requirements.txt
+cd frontend && npm install && npm run build && cd ..
 sudo systemctl restart gameplatform
+```
+
+---
+
+## 安全措施
+
+| 措施 | 实现位置 | 说明 |
+|------|---------|------|
+| HTTPS/WSS | Nginx | SSL 终止，TLSv1.2/1.3 |
+| 绑定本地 | start.sh | 默认 `127.0.0.1` |
+| 连接限速 | Nginx | 每 IP 并发 ≤20，请求 ≤30/min |
+| 应用限速 | server.py | 每 IP 并发 ≤10，建房 ≤5/min |
+| 房间上限 | server.py | MAX_ROOMS=50 |
+| 输入校验 | server.py | 字段长度截断 + 类型检查 |
+| 密码哈希 | room.py | bcrypt hash |
+| session 认证 | auth/ | bcrypt + HTTP-only cookie |
+| 异常不暴露 | server.py | 泛化错误返回客户端 |
+
+---
+
+## 常见问题
+
+### Nginx 502 Bad Gateway
+uvicorn 未启动或监听地址不对：
+```bash
+systemctl status gameplatform
+curl http://127.0.0.1:8000/
+```
+
+### WebSocket 断连 (1006)
+检查 Nginx `proxy_read_timeout` 是否设为 86400。
+
+### 前端页面空白
+确认前端已构建：`ls framework/static/dist/index.html`
+
+### 数据库未初始化
+```bash
+python -m framework init-db
+```
+
+### SSL 证书过期
+```bash
+sudo certbot renew
 ```

@@ -13,7 +13,8 @@
 - [ ] `framework/games/<game_id>/__init__.py` — 空文件
 - [ ] `framework/games/<game_id>/plugin.py` — 注册 `GAME_CLASS`
 - [ ] `framework/games/__init__.py` — 在 `_GAME_REGISTRY` 中添加条目（含 name / min_players / max_players / cover / module）
-- [ ] `framework/static/games/<game_id>.js` — `class MyGameRenderer`，文件末尾注册到 `_RENDERERS`
+- [ ] `frontend/src/components/games/<GameName>.vue` — Vue 渲染器组件
+- [ ] `frontend/src/views/game/GameRoom.vue` — 在 `renderers` 映射中注册
 
 ### 3. 部署侧
 
@@ -144,48 +145,51 @@ _GAME_REGISTRY: dict[str, dict] = {
 
 ---
 
-### `framework/static/games/<game_id>.js`
+### `frontend/src/components/games/<GameName>.vue`
 
-```javascript
-class MyGameRenderer {
-    /**
-     * @param {HTMLElement} container  渲染目标容器
-     * @param {number}      myIdx      本玩家座位号（0-based），观战者为 -1
-     * @param {Function}    respond    (kind, value) => void
-     */
-    constructor(container, myIdx, respond) {
-        this._el = container;
-        this._myIdx = myIdx;
-        this._respond = respond;
-    }
+```vue
+<template>
+  <div class="game-mygame">
+    <!-- 根据 store.gameState 渲染游戏状态 -->
+    <div v-if="state">
+      <pre>{{ state }}</pre>
+    </div>
 
-    onState(ctx) {
-        // 渲染完整游戏状态
-        this._el.innerHTML = `<pre>${JSON.stringify(ctx, null, 2)}</pre>`;
-    }
+    <!-- 根据 store.request 渲染操作按钮 -->
+    <div v-if="isMyTurn" class="actions">
+      <button v-for="opt in request.data.choices" :key="opt"
+              @click="store.respond(request.kind, opt)">
+        {{ opt }}
+      </button>
+    </div>
+  </div>
+</template>
 
-    onRequest(playerIdx, kind, data) {
-        if (playerIdx !== this._myIdx) return;
-        // 根据 kind 渲染操作 UI，完成后调用 this._respond(kind, value)
-    }
+<script setup>
+import { computed } from 'vue'
+import { useGameStore } from '@/stores/game'
 
-    onGameOver(result) {
-        this._el.innerHTML = `<h2>游戏结束</h2><pre>${JSON.stringify(result, null, 2)}</pre>`;
-    }
-}
+const store = useGameStore()
+const state = computed(() => store.gameState)
+const request = computed(() => store.request)
+const isMyTurn = computed(() => request.value && request.value.idx === store.myIdx)
+</script>
 ```
 
 ---
 
-### 游戏 JS 末尾注册渲染器
+### 在 `GameRoom.vue` 中注册
 
 ```javascript
-// 在 class MyGameRenderer { ... } 定义之后，文件末尾添加：
-if (typeof _RENDERERS !== 'undefined') _RENDERERS['mygame'] = MyGameRenderer;
+import MyGame from '@/components/games/MyGame.vue'
+
+const renderers = {
+    // ...existing entries...
+    mygame: MyGame,
+}
 ```
 
-`lobby.js` 的 `initGameUI(gameId)` 会自动从 `_RENDERERS[gameId]` 取类并实例化，
-**无需修改 `lobby.js`，也无需在 `index.html` 中添加 `<script>` 标签**（懒加载自动处理）。
+`GameRoom.vue` 根据 `room.game_id` 从 `renderers` 映射中选择对应组件动态渲染。
 
 ---
 
@@ -213,8 +217,8 @@ IncanGold/
 gameplatform/framework/games/incan_gold/
 └── plugin.py
 
-gameplatform/framework/static/games/
-└── incan_gold.js
+gameplatform/frontend/src/components/games/
+└── IncanGold.vue
 ```
 
 ### 适配器设计
@@ -280,26 +284,12 @@ Incan Gold 前端真正依赖的状态字段是：
 
 ### 前端渲染器接入要点
 
-`incan_gold.js` 这次踩过的坑可以直接记住：
+Vue 渲染器组件（`frontend/src/components/games/IncanGold.vue`）：
 
-- 不要假设大厅提供全局 DOM helper，自己的文件里需要自带 helper
-- 文件末尾必须注册到 `_RENDERERS`
-- 如果懒加载脚本改了但浏览器没刷新，记得 bump `lobby.js` 里的 `?v=`
-
-最小渲染器结构：
-
-```javascript
-class IncanGoldRenderer {
-  constructor(container, myIdx, respond) { ... }
-  onState(ctx) { ... }
-  onRequest(playerIdx, kind, data) { ... }
-  onGameOver(result) { ... }
-}
-
-if (typeof _RENDERERS !== 'undefined') {
-  _RENDERERS['incan_gold'] = IncanGoldRenderer;
-}
-```
+- 通过 Pinia store 获取 `gameState`、`request`、`myIdx`
+- 操作响应调用 `store.respond(kind, value)`
+- 组件在 `GameRoom.vue` 的 `renderers` 映射中注册为 `incan_gold: IncanGold`
+- 无需管理 WebSocket 连接或消息路由
 
 ### 适合什么类型的游戏复用这套模式
 

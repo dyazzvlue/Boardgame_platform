@@ -4,11 +4,18 @@
 
 | 文件 | 内容 |
 |------|------|
-| [architecture.md](architecture.md) | 框架架构、模块职责、线程模型、设计原则 |
+| [architecture.md](architecture.md) | 框架架构、模块职责、线程模型、Per-Player State |
 | [protocol.md](protocol.md) | WebSocket 消息协议完整参考（类型、字段、流程） |
-| [add-game.md](add-game.md) | 接入新游戏的完整清单、代码模板与 Incan Gold 实例 |
-| [frontend.md](frontend.md) | 前端 JS 开发规范（渲染器 API、大厅钩子、计时器） |
-| [debugging.md](debugging.md) | 常见问题排查、历史 Bug 记录、快速诊断命令，含大厅加载态与首屏创建失败排查 |
-| [deploy.md](deploy.md) | 生产部署指南（Nginx + SSL + systemd + 安全加固清单），含 WebSocket 首连检查 |
+| [add-game.md](add-game.md) | 接入新游戏的完整清单、代码模板 |
+| [frontend.md](frontend.md) | Vue 3 前端开发规范（Pinia store、渲染器组件、路由） |
+| [debugging.md](debugging.md) | 常见问题排查、历史 Bug 记录、快速诊断命令 |
+| [deploy.md](deploy.md) | 生产部署指南（环境依赖 + Nginx + SSL + systemd） |
 
-> **根目录**的 `GamePlatfrom_dev_skill.md` 保留为精简速查版，完整内容在此目录。
+## 技术栈概要
+
+- **后端**：Python 3.10+ / FastAPI / uvicorn / aiosqlite / bcrypt
+- **前端**：Vue 3 / Vue Router 4 / Pinia / Vite 8 / Marked
+- **数据库**：SQLite (WAL mode)
+- **部署**：Nginx 反代 + systemd + Let's Encrypt
+
+> `GamePlatfrom_dev_skill.md` 为精简速查版（保留兼容），完整内容在本目录各文件中。

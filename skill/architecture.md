@@ -2,13 +2,24 @@
 
 ## 总览
 
-gameplatform 是一个泛用多人联机桌游平台，使用 FastAPI + WebSocket 提供服务，
+gameplatform 是一个泛用多人联机桌游平台 + 个人博客系统，使用 FastAPI + WebSocket + Vue 3 提供服务，
 游戏逻辑以**插件形式**独立接入。框架本身不包含任何游戏逻辑。
 
 ```
-浏览器 (WebSocket) ←→ server.py ←→ NetBridge ←→ game.run()（daemon 线程）
-                         ↕
-                       Room / RoomRegistry
+浏览器 (Vue SPA)
+  │  HTTP (REST API)
+  │  WebSocket (/ws)
+  ▼
+server.py (FastAPI)
+  ├── /api/blog/*        博客公开 API
+  ├── /api/admin/*       管理后台 API (需 session 认证)
+  ├── /ws                WebSocket 游戏逻辑
+  ├── /assets/*          Vite 构建产物
+  └── /*                 SPA fallback → dist/index.html
+       ↕
+  NetBridge ←→ game.run()（daemon 线程）
+       ↕
+  Room / RoomRegistry
 ```
 
 ---
@@ -17,27 +28,58 @@ gameplatform 是一个泛用多人联机桌游平台，使用 FastAPI + WebSocke
 
 ```
 gameplatform/
-├── pyproject.toml
-├── skill/                  本目录：开发参考文档
+├── pyproject.toml          Python 包配置 + 依赖声明
+├── requirements.txt        锁定版本依赖
+├── skill/                  开发参考文档（本目录）
+├── tools/
+│   ├── deploy.sh           一键部署脚本
+│   ├── start.sh            启动服务器
+│   ├── dev.sh              开发模式（后端 + 前端热更新）
+│   ├── fetch-games.sh      拉取/更新游戏 repo
+│   └── games.conf          游戏注册配置
 └── framework/
-    ├── server.py           FastAPI 入口，WebSocket 路由，房间生命周期
+    ├── server.py           FastAPI 入口，WebSocket/REST 路由，SPA fallback
     ├── room.py             Room / RoomMember / RoomRegistry 数据模型
     ├── net_bridge.py       AbstractBridge 的网络实现（线程↔asyncio 桥）
+    ├── cli.py              CLI 命令（init-db / create-admin）
+    ├── __main__.py         python -m framework 入口
     ├── core/
-    │   ├── base_game.py    AbstractGame 抽象基类
+    │   ├── base_game.py    AbstractGame 抽象基类（含 get_state_for_player）
     │   ├── base_bridge.py  AbstractBridge 抽象基类
     │   └── protocol.py     MsgType / ErrorCode 常量
+    ├── db/
+    │   └── __init__.py     SQLite 连接管理 + 表结构（blog.db）
+    ├── auth/
+    │   ├── __init__.py     bcrypt 密码哈希
+    │   ├── session.py      session token 管理
+    │   └── deps.py         FastAPI 依赖注入（require_admin）
+    ├── blog/
+    │   ├── routes.py       公开博客 API（GET /api/blog/*）
+    │   └── admin_routes.py 管理 CRUD API（POST /api/admin/*）
     ├── games/
-    │   ├── __init__.py     游戏注册表（_GAME_MODULES 字典）
-    │   └── <game_id>/
-    │       ├── __init__.py
-    │       └── plugin.py   GAME_CLASS = MyGame
+    │   ├── __init__.py     游戏注册表
+    │   └── <game_id>/      各游戏插件
     └── static/
-        ├── index.html      SPA 骨架（#home / #lobby / #rules / #room-waiting / #game-wrap）
-        ├── lobby.js        大厅逻辑、WebSocket 核心、首页/规则页、计时器
-        ├── marked.min.js   Markdown 渲染库（本地提供，避免 CDN 依赖）
-        └── games/
-            └── <game_id>.js  游戏渲染器类
+        └── dist/           Vite 构建输出（index.html + assets/）
+
+frontend/                   Vue 3 前端源码
+├── package.json            Node.js 依赖（vue, vue-router, pinia, marked, vite）
+├── vite.config.js          构建配置（输出到 ../framework/static/dist）
+├── index.html              SPA 入口
+└── src/
+    ├── main.js             Vue app 创建
+    ├── router.js           路由配置
+    ├── stores/game.js      Pinia WebSocket 状态管理
+    ├── style.css           全局样式
+    ├── components/
+    │   ├── blog/           博客组件（PostCard, Pagination）
+    │   └── games/          游戏渲染器（5个 Vue 组件）
+    └── views/
+        ├── BlogHome.vue    博客首页
+        ├── PostDetail.vue  文章详情
+        ├── CategoryView.vue 分类页
+        ├── admin/          管理后台视图
+        └── game/           游戏大厅 + 房间
 ```
 
 ---
@@ -45,29 +87,30 @@ gameplatform/
 ## 核心模块职责
 
 ### `server.py`
-- 唯一的 HTTP / WebSocket 入口
+- HTTP / WebSocket 入口
 - 维护全局 `RoomRegistry` 和事件循环引用
-- 每条 WebSocket 消息经 `t = data.get('type')` 路由到对应处理块
-- 游戏开始时在 `_start_game()` 中创建 `NetBridge`、注入 game、启动 daemon 线程
-- REST API：`GET /api/games`（游戏列表）、`GET /api/rules/{game_id}`（规则 markdown）
-
-### `room.py`
-- `RoomMember`：单个成员（ws / name / player_idx / connected / is_ai）
-- `Room`：成员列表、房间状态（code / game_id / turn_timeout / started）
-- `RoomRegistry`：线程安全的房间全局字典，`create()` 生成随机 6 位房间码
+- 集成 blog/admin router
+- SPA catch-all：非 API/WS/assets 路径返回 `dist/index.html`
+- REST API：`GET /api/games`、`GET /api/rules/{game_id}`
 
 ### `net_bridge.py`（`NetBridge`）
-- 继承 `AbstractBridge`，是游戏线程与 asyncio 事件循环之间的**唯一通信通道**
-- `ask(player_idx, kind, data)` — 阻塞式，向玩家发 REQUEST，等待 RESPONSE
-  - 支持 `turn_timeout` 超时（`threading.Event.wait(timeout=N)`）
-  - 超时或玩家离线后返回 `None`，游戏层自行处理
-- `handle_leave(player_idx)` — 玩家主动离开，AI 接管；无真人时自动终局
-- `_handle_disconnect(member)` — 断线处理，同样触发 AI 接管检查
-- `_schedule(msg)` — 将消息通过 `run_coroutine_threadsafe` 放入广播队列
+- 继承 `AbstractBridge`
+- `ask(player_idx, kind, data)` — 阻塞式发 REQUEST，等待 RESPONSE
+- `broadcast_state()` — 调用 `_schedule_per_player()`，为每个玩家发送定制状态
+- `_schedule_per_player()` — 遍历在线成员，调用 `game.get_state_for_player(idx)`
 
-### `core/base_game.py` / `core/base_bridge.py`
-- 纯抽象接口，`framework/core/` 内**不 import 任何游戏模块**
-- 游戏插件只依赖这两个抽象类，不接触 FastAPI/asyncio
+### `core/base_game.py`
+- `AbstractGame` 抽象基类
+- 新增 `get_state_for_player(player_idx)` — 可选覆盖，默认调用 `get_state()`
+- 用于 Avalon（隐藏他人角色）、GuanDan（隐藏他人手牌）等需要信息隔离的游戏
+
+### `db/__init__.py`
+- SQLite + WAL 模式 + foreign_keys
+- 表：admin_users, categories, posts (含 pinned), tags, post_tags, sessions
+
+### `blog/` + `auth/`
+- 完整的博客 CRUD + session 认证
+- bcrypt 密码哈希，HTTP-only cookie session
 
 ---
 
@@ -77,18 +120,30 @@ gameplatform/
 asyncio 事件循环（主线程）
   │
   ├─ ws_endpoint()         — 每个 WebSocket 连接的协程
-  ├─ broadcast_loop()      — 每个游戏房间一个协程，消费广播队列
-  └─ _start_countdown()    — 满员倒计时协程
+  ├─ _schedule_per_player  — 逐个向在线玩家发送定制状态
+  └─ _start_countdown()    — 满员倒计时
 
 daemon 线程（每局游戏一个）
-  └─ game.run()            — 同步调用 bridge.ask()，阻塞等待玩家操作
+  └─ game.run()            — 同步调用 bridge.ask()，阻塞等待
 ```
 
-**关键规则：**
-- `bridge.ask()` **只能**在游戏 daemon 线程内调用
-- `bridge.log()` / `bridge.broadcast_state()` 可在任意线程调用
-- `room.members` 的增删由 `room._lock` 保护
-- 游戏线程通过 `threading.Event` 与 asyncio 事件循环同步
+---
+
+## Per-Player State 机制
+
+```python
+# base_game.py
+def get_state_for_player(self, player_idx: int) -> dict:
+    """默认返回 get_state()，子类可覆盖。"""
+    return self.get_state()
+```
+
+`broadcast_state()` 遍历所有在线成员，对每个成员调用 `get_state_for_player(member.player_idx)`，
+单独发送 STATE 消息。这保证了：
+- Avalon：每人只看到自己的角色和夜晚情报
+- GuanDan：每人只看到自己的手牌
+- TransCard：每人只看到自己的手牌
+- Manila/IncanGold：所有人看到相同状态
 
 ---
 
@@ -97,26 +152,6 @@ daemon 线程（每局游戏一个）
 1. **框架不感知游戏逻辑**：`framework/core/` 零 import 游戏模块
 2. **游戏不感知 WebSocket**：游戏插件只通过 `AbstractBridge` 接口通信
 3. **单机模式零影响**：游戏 repo 原有代码不受 `online/` 目录影响
-4. **全量广播优先**：每次状态变更后调用 `bridge.broadcast_state()`，广播完整 `get_state()` 而非增量 diff
-5. **断线 AI 接管**：玩家断线或主动离开后 AI 自动接管，游戏继续；全部玩家离线则自动终局
-
----
-
-## 房间生命周期
-
-```
-CREATE → 加入等待 → 满员触发15s倒计时 → [手动START / 倒计时到0] → 游戏进行
-                     ↑房主可以 ADD_AI                        ↓ LEAVE_GAME / 断线
-                                                        AI 接管（game继续）
-                                                        全员离线 → 自动终局
-```
-
-`room.started = True` 设置后游戏线程启动，不可回退。
-
----
-
-## 已知限制
-
-- 游戏结束后房间不会自动从 `RoomRegistry` 移除（需手动调用 `_registry.remove(code)`）
-- 观战者加入时不主动推送当前 state，需等下一次 `broadcast_state()` 触发
-- `ask()` 超时后返回 `None`，由游戏适配层决定行为（通常退化为默认值）
+4. **Per-player 状态**：`broadcast_state()` 为每个玩家发送定制视图
+5. **断线 AI 接管**：玩家断线后 AI 自动接管，全员离线则终局
+6. **前后端分离**：Vue SPA 通过 REST API + WebSocket 与后端交互
