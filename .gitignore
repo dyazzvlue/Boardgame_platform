@@ -31,3 +31,15 @@ htmlcov/
 *.log
 saves/
 logs/
+
+# Frontend
+frontend/node_modules/
+framework/static/dist/
+framework/static/_legacy/
+
+# Database
+framework/data/*.db
+
+# Uploads
+framework/static/uploads/
+framework/data/

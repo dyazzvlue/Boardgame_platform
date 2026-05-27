@@ -59,8 +59,25 @@ class NetBridge(AbstractBridge):
     def broadcast_state(self):
         if self._game is None:
             return
-        self._schedule({'type': MsgType.STATE, 'game_id': self._room.game_id,
-                        'context': self._game.get_state()})
+        self._schedule_per_player()
+
+    def _schedule_per_player(self):
+        """向每个玩家发送其专属视角状态。"""
+        import asyncio as _aio
+        async def _send():
+            for member in list(self._room.members):
+                if not member.connected or member.is_ai:
+                    continue
+                try:
+                    ctx = self._game.get_state_for_player(member.player_idx)
+                    await member.ws.send_json({
+                        'type': MsgType.STATE,
+                        'game_id': self._room.game_id,
+                        'context': ctx,
+                    })
+                except Exception:
+                    self._handle_disconnect(member)
+        _aio.run_coroutine_threadsafe(_send(), self._loop)
 
     def broadcast_game_over(self, result: dict):
         self._room._game_ended = True
