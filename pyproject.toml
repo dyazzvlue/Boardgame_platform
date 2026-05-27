@@ -6,12 +6,15 @@ build-backend = "setuptools.build_meta"
 name = "gameplatform"
 version = "0.1.0"
 description = "泛用多人联机桌游平台框架"
-requires-python = ">=3.7"
+requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.95",
     "uvicorn[standard]>=0.20",
     "websockets>=10",
     "bcrypt>=4.0",
+    "aiosqlite>=0.19",
+    "click>=8.0",
+    "python-multipart>=0.0.5",
 ]
 
 [project.optional-dependencies]

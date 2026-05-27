@@ -25,6 +25,11 @@ class AbstractGame(ABC):
     def get_state(self) -> dict:
         """返回完整游戏状态（JSON 可序列化 dict）。"""
 
+    def get_state_for_player(self, player_idx: int) -> dict:
+        """返回玩家视角的状态。默认与 get_state() 相同。
+        子类可覆盖以提供每个玩家不同的视图（如隐藏角色信息）。"""
+        return self.get_state()
+
     @abstractmethod
     def on_player_disconnected(self, player_idx: int) -> None:
         """玩家断线时由框架调用，通常切换为 AI。"""

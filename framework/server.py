@@ -15,6 +15,8 @@ from .core.protocol import MsgType, ErrorCode
 from .room import RoomRegistry
 from .games import get_game_class, list_games
 from .net_bridge import NetBridge
+from .db import init_db, close_db
+from .blog import blog_router, admin_router
 
 app = FastAPI(title='GamePlatform')
 _registry = RoomRegistry()
@@ -32,8 +34,28 @@ _ip_creates: dict = {}      # ip -> deque of create timestamps
 if _STATIC.exists():
     app.mount('/static', StaticFiles(directory=str(_STATIC), html=False), name='static')
 
+_DIST = _STATIC / 'dist'
+if _DIST.exists():
+    app.mount('/assets', StaticFiles(directory=str(_DIST / 'assets')), name='dist_assets')
+
+# ── 生命周期事件 + 博客路由 ────────────────────────────────────────────────────
+
+@app.on_event("startup")
+async def _startup():
+    await init_db()
+
+@app.on_event("shutdown")
+async def _shutdown():
+    await close_db()
+
+app.include_router(blog_router)
+app.include_router(admin_router)
+
 @app.get('/')
 async def index():
+    f = _STATIC / 'dist' / 'index.html'
+    if f.exists():
+        return FileResponse(str(f))
     return FileResponse(str(_STATIC / 'index.html'))
 
 
@@ -451,3 +473,18 @@ async def _start_game(room, loop):
     t.start()
     bridge.log('游戏开始！', 'header')
     bridge.broadcast_state()
+
+
+# ── SPA catch-all (must be last) ─────────────────────────────────────────────
+
+@app.api_route('/{path:path}', methods=['GET'], include_in_schema=False)
+async def spa_fallback(path: str):
+    """Fallback: serve Vue SPA index.html for client-side routes."""
+    # Skip API and WebSocket paths
+    if path.startswith(('api/', 'ws', 'static/', 'assets/')):
+        from fastapi.responses import JSONResponse
+        return JSONResponse({'error': 'not found'}, status_code=404)
+    f = _STATIC / 'dist' / 'index.html'
+    if f.exists():
+        return FileResponse(str(f))
+    return FileResponse(str(_STATIC / 'index.html'))
