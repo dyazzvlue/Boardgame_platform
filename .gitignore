@@ -32,6 +32,10 @@ htmlcov/
 saves/
 logs/
 
+# Local demo runtime data and generated credentials
+local-demo/
+admin-password.txt
+
 # Frontend
 frontend/node_modules/
 framework/static/dist/

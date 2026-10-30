@@ -81,6 +81,13 @@ npm run dev
 
 前端开发服务器（通常 `http://localhost:5173`）会代理 API/WebSocket 到后端。
 
+### 独立本地演示
+
+准备好 Python 依赖和前端构建后，运行 `python tools/serve-local-demo.py`，
+默认在 `http://127.0.0.1:8000` 提供带示例文章的独立持久化演示库。
+密码随机生成并保存在本机，不提交数据或凭证。完整操作和可移植 VS Code 任务示例见
+[本地演示指南](skill/local-demo.md)。
+
 ### 回归验证
 
 ```bash
@@ -168,6 +175,7 @@ gameplatform/
 | [deploy.md](skill/deploy.md) | 生产部署指南 |
 | [debugging.md](skill/debugging.md) | 常见问题排查 |
 | [optimization-opt_dev0.md](skill/optimization-opt_dev0.md) | 本次三批优化、六仓库实现提交对应关系、验收结果与部署注意事项 |
+| [local-demo.md](skill/local-demo.md) | 独立本地演示、随机账号、数据持久化及 VS Code 任务配置 |
 
 ---
 
