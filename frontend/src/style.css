@@ -75,3 +75,10 @@ input:focus, textarea:focus, select:focus {
   border-radius: var(--radius);
   padding: 1.5rem;
 }
+
+.post-content { line-height: 1.8; overflow-wrap: anywhere; }
+.post-content h2 { margin-top: 2rem; margin-bottom: 0.5rem; }
+.post-content pre { background: #1a1a2e; padding: 1rem; border-radius: var(--radius); overflow-x: auto; }
+.post-content code { background: #2a2a4a; padding: 0.1rem 0.3rem; border-radius: 3px; }
+.post-content img { max-width: 100%; height: auto; border-radius: var(--radius); }
+.post-content table { display: block; max-width: 100%; overflow-x: auto; }

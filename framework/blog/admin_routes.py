@@ -4,16 +4,22 @@ framework/blog/admin_routes — 博客管理 API（需鉴权）。
 from __future__ import annotations
 
 import re
+import sqlite3
 import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Request, Path as ApiPath
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 
-from ..auth.deps import get_current_admin
-from ..auth.session import create_session, delete_session, hash_password, verify_password
-from ..db import get_db
+from ..auth.deps import _extract_token, get_current_admin
+from ..auth.session import create_session, delete_session, verify_password
+from ..db import get_db, write_transaction
+from .models import (
+    CategoryCreate, CategoryUpdate, LoginRequest, PostCreate, PostUpdate, TagCreate,
+)
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -22,22 +28,32 @@ _ALLOWED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg'}
 _MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 
 
+@asynccontextmanager
+async def _blog_write():
+    try:
+        async with write_transaction() as db:
+            yield db
+    except sqlite3.IntegrityError as exc:
+        error_code = getattr(exc, "sqlite_errorcode", None)
+        if error_code in (sqlite3.SQLITE_CONSTRAINT_UNIQUE, sqlite3.SQLITE_CONSTRAINT_PRIMARYKEY):
+            raise HTTPException(409, "名称或 slug 已存在") from exc
+        if error_code == sqlite3.SQLITE_CONSTRAINT_FOREIGNKEY:
+            raise HTTPException(400, "分类或标签不存在") from exc
+        raise HTTPException(400, "数据不符合数据库约束") from exc
+
+
 # ── 鉴权 ─────────────────────────────────────────────────────────────────────
 
 @router.post("/login")
-async def login(body: dict):
+async def login(body: LoginRequest):
     """管理员登录，返回 session token（同时设置 Cookie）。"""
-    username = str(body.get("username", "")).strip()
-    password = str(body.get("password", ""))
-    if not username or not password:
-        raise HTTPException(400, "用户名和密码不能为空")
-
+    username = body.username
     db = await get_db()
     rows = await db.execute_fetchall(
         "SELECT id, password_hash FROM admin_users WHERE username = ?",
         (username,)
     )
-    if not rows or not verify_password(password, rows[0][1]):
+    if not rows or not await run_in_threadpool(verify_password, body.password, rows[0][1]):
         raise HTTPException(401, "用户名或密码错误")
 
     user_id = rows[0][0]
@@ -51,8 +67,11 @@ async def login(body: dict):
 
 
 @router.post("/logout")
-async def logout(admin: dict = Depends(get_current_admin)):
+async def logout(request: Request, admin: dict = Depends(get_current_admin)):
     """登出，删除 session。"""
+    token = _extract_token(request)
+    if token:
+        await delete_session(token)
     response = JSONResponse({"ok": True})
     response.delete_cookie("session_token")
     return response
@@ -85,7 +104,7 @@ async def admin_list_posts(admin: dict = Depends(get_current_admin)):
 
 
 @router.get("/posts/{post_id}")
-async def admin_get_post(post_id: int, admin: dict = Depends(get_current_admin)):
+async def admin_get_post(post_id: int = ApiPath(..., gt=0), admin: dict = Depends(get_current_admin)):
     """获取单篇文章完整内容（含草稿）。"""
     db = await get_db()
     rows = await db.execute_fetchall(
@@ -110,162 +129,113 @@ async def admin_get_post(post_id: int, admin: dict = Depends(get_current_admin))
 
 
 @router.post("/posts")
-async def create_post(body: dict, admin: dict = Depends(get_current_admin)):
+async def create_post(body: PostCreate, admin: dict = Depends(get_current_admin)):
     """创建新文章。"""
-    title = str(body.get("title", "")).strip()
-    if not title:
-        raise HTTPException(400, "标题不能为空")
-
-    slug = body.get("slug") or _slugify(title)
-    content = str(body.get("content", ""))
-    cover_image = str(body.get("cover_image", ""))
-    category_id = body.get("category_id")
-    published = bool(body.get("published", False))
-    pinned = bool(body.get("pinned", False))
-    tag_ids = body.get("tag_ids", [])
-
-    db = await get_db()
-    existing = await db.execute_fetchall("SELECT id FROM posts WHERE slug = ?", (slug,))
-    if existing:
-        raise HTTPException(400, f"slug '{slug}' 已存在")
-
+    slug = body.slug or _slugify(body.title)
     now = datetime.now(timezone.utc).isoformat()
-    cursor = await db.execute(
-        """INSERT INTO posts (title, slug, content, cover_image, category_id, published, pinned, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (title, slug, content, cover_image, category_id, int(published), int(pinned), now, now)
-    )
-    post_id = cursor.lastrowid
-
-    for tid in tag_ids:
-        await db.execute("INSERT OR IGNORE INTO post_tags (post_id, tag_id) VALUES (?, ?)", (post_id, tid))
-
-    await db.commit()
+    async with _blog_write() as db:
+        cursor = await db.execute(
+            """INSERT INTO posts (title, slug, content, cover_image, category_id, published, pinned, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (body.title, slug, body.content, body.cover_image, body.category_id,
+             int(body.published), int(body.pinned), now, now)
+        )
+        post_id = cursor.lastrowid
+        for tid in dict.fromkeys(body.tag_ids):
+            await db.execute("INSERT INTO post_tags (post_id, tag_id) VALUES (?, ?)", (post_id, tid))
     return {"id": post_id, "slug": slug}
 
 
 @router.put("/posts/{post_id}")
-async def update_post(post_id: int, body: dict, admin: dict = Depends(get_current_admin)):
+async def update_post(body: PostUpdate, post_id: int = ApiPath(..., gt=0), admin: dict = Depends(get_current_admin)):
     """更新文章。"""
-    db = await get_db()
-    existing = await db.execute_fetchall("SELECT id FROM posts WHERE id = ?", (post_id,))
-    if not existing:
-        raise HTTPException(404, "文章不存在")
-
-    fields = []
-    params = []
-    for key in ("title", "slug", "content", "cover_image", "category_id"):
-        if key in body:
-            fields.append(f"{key} = ?")
-            params.append(body[key])
-    if "published" in body:
-        fields.append("published = ?")
-        params.append(int(bool(body["published"])))
-    if "pinned" in body:
-        fields.append("pinned = ?")
-        params.append(int(bool(body["pinned"])))
-
-    if not fields:
+    changes = body.model_dump(exclude_unset=True)
+    if not changes:
         raise HTTPException(400, "没有可更新的字段")
 
-    fields.append("updated_at = ?")
-    params.append(datetime.now(timezone.utc).isoformat())
-    params.append(post_id)
-
-    await db.execute(f"UPDATE posts SET {', '.join(fields)} WHERE id = ?", params)
-
-    if "tag_ids" in body:
-        await db.execute("DELETE FROM post_tags WHERE post_id = ?", (post_id,))
-        for tid in body["tag_ids"]:
-            await db.execute("INSERT OR IGNORE INTO post_tags (post_id, tag_id) VALUES (?, ?)", (post_id, tid))
-
-    await db.commit()
+    tag_ids = changes.pop("tag_ids", None)
+    for key in ("published", "pinned"):
+        if key in changes:
+            changes[key] = int(changes[key])
+    changes["updated_at"] = datetime.now(timezone.utc).isoformat()
+    async with _blog_write() as db:
+        cursor = await db.execute(
+            f"UPDATE posts SET {', '.join(f'{key} = ?' for key in changes)} WHERE id = ?",
+            [*changes.values(), post_id],
+        )
+        if not cursor.rowcount:
+            raise HTTPException(404, "文章不存在")
+        if tag_ids is not None:
+            await db.execute("DELETE FROM post_tags WHERE post_id = ?", (post_id,))
+            for tid in dict.fromkeys(tag_ids):
+                await db.execute("INSERT INTO post_tags (post_id, tag_id) VALUES (?, ?)", (post_id, tid))
     return {"ok": True}
 
 
 @router.delete("/posts/{post_id}")
-async def delete_post(post_id: int, admin: dict = Depends(get_current_admin)):
+async def delete_post(post_id: int = ApiPath(..., gt=0), admin: dict = Depends(get_current_admin)):
     """删除文章。"""
-    db = await get_db()
-    await db.execute("DELETE FROM posts WHERE id = ?", (post_id,))
-    await db.commit()
+    async with _blog_write() as db:
+        await db.execute("DELETE FROM posts WHERE id = ?", (post_id,))
     return {"ok": True}
 
 
 # ── 分类管理 ──────────────────────────────────────────────────────────────────
 
 @router.post("/categories")
-async def create_category(body: dict, admin: dict = Depends(get_current_admin)):
+async def create_category(body: CategoryCreate, admin: dict = Depends(get_current_admin)):
     """创建分类。"""
-    name = str(body.get("name", "")).strip()
-    if not name:
-        raise HTTPException(400, "分类名不能为空")
-    slug = body.get("slug") or _slugify(name)
-    description = str(body.get("description", ""))
-
-    db = await get_db()
-    try:
+    name = body.name
+    slug = body.slug or _slugify(name)
+    async with _blog_write() as db:
         cursor = await db.execute(
             "INSERT INTO categories (name, slug, description) VALUES (?, ?, ?)",
-            (name, slug, description)
+            (name, slug, body.description)
         )
-        await db.commit()
-    except Exception:
-        raise HTTPException(400, f"分类 '{name}' 或 slug '{slug}' 已存在")
     return {"id": cursor.lastrowid, "name": name, "slug": slug}
 
 
 @router.put("/categories/{cat_id}")
-async def update_category(cat_id: int, body: dict, admin: dict = Depends(get_current_admin)):
+async def update_category(body: CategoryUpdate, cat_id: int = ApiPath(..., gt=0), admin: dict = Depends(get_current_admin)):
     """更新分类。"""
-    db = await get_db()
-    fields, params = [], []
-    for key in ("name", "slug", "description"):
-        if key in body:
-            fields.append(f"{key} = ?")
-            params.append(body[key])
-    if not fields:
+    changes = body.model_dump(exclude_unset=True)
+    if not changes:
         raise HTTPException(400, "没有可更新的字段")
-    params.append(cat_id)
-    await db.execute(f"UPDATE categories SET {', '.join(fields)} WHERE id = ?", params)
-    await db.commit()
+    async with _blog_write() as db:
+        cursor = await db.execute(
+            f"UPDATE categories SET {', '.join(f'{key} = ?' for key in changes)} WHERE id = ?",
+            [*changes.values(), cat_id],
+        )
+        if not cursor.rowcount:
+            raise HTTPException(404, "分类不存在")
     return {"ok": True}
 
 
 @router.delete("/categories/{cat_id}")
-async def delete_category(cat_id: int, admin: dict = Depends(get_current_admin)):
+async def delete_category(cat_id: int = ApiPath(..., gt=0), admin: dict = Depends(get_current_admin)):
     """删除分类。"""
-    db = await get_db()
-    await db.execute("DELETE FROM categories WHERE id = ?", (cat_id,))
-    await db.commit()
+    async with _blog_write() as db:
+        await db.execute("DELETE FROM categories WHERE id = ?", (cat_id,))
     return {"ok": True}
 
 
 # ── 标签管理 ──────────────────────────────────────────────────────────────────
 
 @router.post("/tags")
-async def create_tag(body: dict, admin: dict = Depends(get_current_admin)):
+async def create_tag(body: TagCreate, admin: dict = Depends(get_current_admin)):
     """创建标签。"""
-    name = str(body.get("name", "")).strip()
-    if not name:
-        raise HTTPException(400, "标签名不能为空")
-    slug = body.get("slug") or _slugify(name)
-
-    db = await get_db()
-    try:
+    name = body.name
+    slug = body.slug or _slugify(name)
+    async with _blog_write() as db:
         cursor = await db.execute("INSERT INTO tags (name, slug) VALUES (?, ?)", (name, slug))
-        await db.commit()
-    except Exception:
-        raise HTTPException(400, f"标签 '{name}' 或 slug '{slug}' 已存在")
     return {"id": cursor.lastrowid, "name": name, "slug": slug}
 
 
 @router.delete("/tags/{tag_id}")
-async def delete_tag(tag_id: int, admin: dict = Depends(get_current_admin)):
+async def delete_tag(tag_id: int = ApiPath(..., gt=0), admin: dict = Depends(get_current_admin)):
     """删除标签。"""
-    db = await get_db()
-    await db.execute("DELETE FROM tags WHERE id = ?", (tag_id,))
-    await db.commit()
+    async with _blog_write() as db:
+        await db.execute("DELETE FROM tags WHERE id = ?", (tag_id,))
     return {"ok": True}
 
 
@@ -281,7 +251,7 @@ async def upload_file(file: UploadFile = File(...), admin: dict = Depends(get_cu
     if ext not in _ALLOWED_EXTENSIONS:
         raise HTTPException(400, f"不支持的文件类型: {ext}")
 
-    content = await file.read()
+    content = await file.read(_MAX_FILE_SIZE + 1)
     if len(content) > _MAX_FILE_SIZE:
         raise HTTPException(400, f"文件大小超过限制 ({_MAX_FILE_SIZE // 1024 // 1024}MB)")
 

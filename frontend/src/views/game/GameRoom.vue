@@ -1,12 +1,12 @@
 <script setup>
-import { computed, onMounted, onUnmounted, defineAsyncComponent } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, watch, defineAsyncComponent } from 'vue'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { useGameStore } from '../../stores/game.js'
 
 const route = useRoute()
 const router = useRouter()
 const store = useGameStore()
-const roomCode = route.params.roomCode
+const roomCode = computed(() => String(route.params.roomCode || '').toUpperCase())
 
 // Dynamic renderer based on game_id
 const renderers = {
@@ -22,31 +22,44 @@ const GameRenderer = computed(() => {
   return renderers[id] || null
 })
 
-onMounted(() => {
-  if (!store.connected) store.connect()
-  store.startPing()
-})
+watch(roomCode, (code) => {
+  if (!store.enterRoom(code)) {
+    router.replace({ name: 'GameLobby', query: { room: code } })
+  }
+}, { immediate: true })
 
-onUnmounted(() => {
-  store.stopPing()
+onBeforeRouteLeave((to) => {
+  if (to.name !== 'GameRoom' || String(to.params.roomCode || '').toUpperCase() !== roomCode.value) {
+    store.leaveRoom()
+  }
 })
-
-function leave() {
-  store.leaveGame()
-  router.push('/game')
-}
 
 function backToLobby() {
-  store.returnRoom()
-  router.push('/game')
+  const targetRoom = store.recoveryError ? roomCode.value : ''
+  store.leaveRoom()
+  router.push({ name: 'GameLobby', ...(targetRoom ? { query: { room: targetRoom } } : {}) })
 }
 </script>
 
 <template>
   <div class="game-room">
+    <div class="connection-bar">
+      <span role="status">{{ store.connectionLabel }}</span>
+      <button class="btn-outline" @click="backToLobby">离开房间，返回大厅</button>
+    </div>
     <!-- 错误提示 -->
-    <p v-if="store.error" class="error">{{ store.error }}</p>
+    <p v-if="store.error && !store.recoveryError" class="error" role="alert">{{ store.error }}</p>
+    <div v-if="store.recoveryError" class="card recovery-error" role="alert">
+      <h2>无法恢复房间</h2>
+      <p>{{ store.recoveryError }}</p>
+      <button class="btn-primary" @click="backToLobby">返回大厅重新加入</button>
+    </div>
+    <div v-else-if="!store.room" class="card loading" role="status">正在确认房间身份，请稍候…</div>
+    <template v-else>
+    <p v-if="store.pendingResponse !== null" class="operation-status" role="status">操作已发送，等待服务器确认…</p>
+    <p v-else-if="store.requestExpired" class="operation-status" role="status">本次操作已超时，等待服务器更新。</p>
 
+    <fieldset class="room-controls" :disabled="!store.actionsEnabled || store.requestExpired">
     <!-- 等待室 -->
     <div v-if="store.room && !store.started" class="waiting card">
       <div class="room-header">
@@ -61,7 +74,7 @@ function backToLobby() {
         <div v-for="p in store.room.players" :key="p.idx" class="player-slot" :class="{ me: p.idx === store.myIdx }">
           <span class="player-name">{{ p.name }}</span>
           <span v-if="p.is_ai" class="ai-tag">AI</span>
-          <span v-if="p.idx === 0" class="host-tag">房主</span>
+          <span v-if="p.idx === store.room.host_idx" class="host-tag">房主</span>
           <span v-if="!p.connected && !p.is_ai" class="offline-tag">离线</span>
         </div>
       </div>
@@ -69,7 +82,6 @@ function backToLobby() {
         <button class="btn-primary" @click="store.startGame()" :disabled="(store.room.players?.length || 0) < 2">开始游戏</button>
         <button class="btn-outline" @click="store.addAI()">添加AI</button>
       </div>
-      <button class="btn-outline" style="margin-top:0.5rem" @click="backToLobby">返回大厅</button>
     </div>
 
     <!-- 游戏进行中 -->
@@ -88,9 +100,9 @@ function backToLobby() {
       <pre v-else class="state-dump">{{ JSON.stringify(store.gameOver, null, 2) }}</pre>
       <div class="over-actions">
         <button class="btn-primary" @click="store.returnRoom()">再来一局</button>
-        <button class="btn-outline" @click="backToLobby">返回大厅</button>
       </div>
     </div>
+    </fieldset>
 
     <!-- 日志面板 -->
     <div v-if="store.started || store.gameOver" class="log-panel card">
@@ -99,11 +111,18 @@ function backToLobby() {
         <div v-for="(log, i) in store.logs" :key="i" :class="['log-entry', log.style]">{{ log.text }}</div>
       </div>
     </div>
+    </template>
   </div>
 </template>
 
 <style scoped>
 .game-room { max-width: 1200px; margin: 0 auto; }
+.connection-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; color: var(--text-muted); }
+.room-controls { border: 0; padding: 0; min-width: 0; }
+.room-controls:disabled { opacity: 0.65; }
+.operation-status { margin-bottom: 1rem; color: var(--accent); }
+.recovery-error, .loading { text-align: center; }
+.recovery-error p { margin: 1rem 0; }
 .error { color: var(--danger); background: rgba(255,50,50,0.1); padding: 0.5rem 1rem; border-radius: 6px; margin-bottom: 1rem; }
 .room-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem; }
 .game-badge { background: var(--accent); color: #fff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.8rem; }

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useGameStore } from '../../stores/game.js'
 
 const store = useGameStore()
@@ -15,14 +15,7 @@ const shipPlacements = ref({})  // { good: position }
 const deployChoice = ref(null)  // { type, good?, slot? }
 const navMoves = ref([])        // [{ good, step }]
 
-// 初始化 bid 金额
-function initBid() {
-  bidAmount.value = data.value.min_bid || 0
-}
-
-function respond(value) {
-  store.respond(kind.value, value)
-  // reset
+function resetOperation() {
   bidAmount.value = 0
   selectedGood.value = ''
   shipPlacements.value = {}
@@ -30,8 +23,27 @@ function respond(value) {
   navMoves.value = []
 }
 
+watch(() => req.value?.request_id, () => {
+  resetOperation()
+  if (kind.value === 'bid' && Number.isFinite(data.value.min_bid)) {
+    bidAmount.value = data.value.min_bid
+  }
+}, { immediate: true })
+
+function respond(value) {
+  return store.respond(kind.value, value)
+}
+
 // 竞价
-function submitBid() { respond(bidAmount.value) }
+function submitBid() {
+  const funds = data.value.player_money ?? state.value.players?.[store.myIdx]?.money
+  if (!Number.isInteger(bidAmount.value) || !Number.isFinite(data.value.min_bid)
+      || !Number.isFinite(funds) || bidAmount.value < data.value.min_bid || bidAmount.value > funds) {
+    store.error = '请输入不低于最低出价、且不超过现有资金的整数金额'
+    return false
+  }
+  return respond(bidAmount.value)
+}
 function passBid() { respond(0) }
 
 // 购买股票
@@ -166,7 +178,7 @@ function pirateDest(pos) { respond(pos) }
         <p>当前最高出价: ₱{{ data.current_bid }} | 最低加价: ₱{{ data.min_bid }}</p>
         <div class="bid-controls">
           <button class="btn-sm" @click="bidAmount = Math.max(data.min_bid, bidAmount - 1)">-</button>
-          <input type="number" v-model.number="bidAmount" :min="data.min_bid" class="bid-input" @focus="initBid">
+          <input type="number" v-model.number="bidAmount" :min="data.min_bid" class="bid-input">
           <button class="btn-sm" @click="bidAmount++">+</button>
           <button class="btn-primary" @click="submitBid">出价 ₱{{ bidAmount }}</button>
           <button class="btn-outline" @click="passBid">不竞价</button>

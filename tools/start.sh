@@ -6,7 +6,7 @@
 #   MANILA_PATH=/custom/path ./tools/start.sh
 #
 # 游戏路径优先级：环境变量 > games.conf 中声明的 local_dir_name（与 gameplatform 平级）
-# 必须在 gameplatform 根目录或其子目录下运行。
+# 可从任意目录运行；PYTHON 可指定虚拟环境的解释器。
 #   使用 --public 参数才会绑定 0.0.0.0（生产环境应由 Nginx 反代，不需要此参数）。
 
 set -e
@@ -16,6 +16,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GP_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 PARENT_DIR="$(cd "$GP_ROOT/.." && pwd)"
 GAMES_CONF="$SCRIPT_DIR/games.conf"
+PYTHON="${PYTHON:-python3}"
+cd "$GP_ROOT"
 
 # ── 默认参数 ─────────────────────────────────────────────────────────────────
 PORT=8000
@@ -44,15 +46,18 @@ if [[ -f "$GAMES_CONF" ]]; then
         [[ -z "$env_var" || -z "$dir_name" ]] && continue
 
         # 若环境变量未设置，尝试自动推断
-        if [[ -z "${!env_var}" ]]; then
+        if ! val="$(printenv "$env_var")"; then
+            val=""
+        fi
+        if [[ -z "$val" ]]; then
             candidate="$PARENT_DIR/$dir_name"
             if [[ -d "$candidate" ]]; then
                 export "$env_var"="$candidate"
+                val="$candidate"
             fi
         fi
 
         # 收集路径状态用于打印
-        val="${!env_var}"
         if [[ -n "$val" ]]; then
             GAME_PATH_SUMMARY+="│  ${env_var}:  $val"$'\n'
         else
@@ -82,22 +87,25 @@ fi
 # ── 预检：尝试加载各游戏插件，打印结果 ──────────────────────────────────────
 echo ""
 echo "── 游戏加载检查 ─────────────────────────────────"
-LOAD_OK=0
-LOAD_FAIL=0
-
-python3 - << 'PYEOF'
-import sys, os
-sys.path.insert(0, os.getcwd())
-from framework.games import list_games
+if "$PYTHON" - << 'PYEOF'
+import sys
+from framework.games import get_game_class, list_games
 games = list_games()
+failed = False
 for g in games:
-    if 'error' in g:
-        print(f"  ✘  {g['id']:12s}  {g['error']}")
-    else:
+    try:
+        get_game_class(g['id'])
         print(f"  ✔  {g['id']:12s}  {g['name']}  ({g['min_players']}–{g['max_players']} 人)")
-sys.exit(1 if any('error' in g for g in games) else 0)
+    except (ImportError, OSError, RuntimeError) as exc:
+        failed = True
+        print(f"  ✘  {g['id']:12s}  {exc}", file=sys.stderr)
+sys.exit(1 if failed else 0)
 PYEOF
-LOAD_RESULT=$?
+then
+    LOAD_RESULT=0
+else
+    LOAD_RESULT=1
+fi
 
 echo "─────────────────────────────────────────────────"
 echo ""
@@ -108,7 +116,7 @@ if [[ $LOAD_RESULT -ne 0 ]]; then
 fi
 
 cd "$GP_ROOT"
-exec uvicorn framework.server:app \
+exec "$PYTHON" -m uvicorn framework.server:app \
     --host "$HOST" \
     --port "$PORT" \
     --log-level warning \

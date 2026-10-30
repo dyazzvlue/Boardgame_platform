@@ -15,7 +15,9 @@ server.py (FastAPI)
   ├── /api/admin/*       管理后台 API (需 session 认证)
   ├── /ws                WebSocket 游戏逻辑
   ├── /assets/*          Vite 构建产物
-  └── /*                 SPA fallback → dist/index.html
+  ├── / /post/* /category/*  博客 HTML + JSON bootstrap
+  ├── /sitemap.xml /robots.txt  搜索引擎入口
+  └── /*                 游戏/后台 SPA fallback → dist/index.html
        ↕
   NetBridge ←→ game.run()（daemon 线程）
        ↕
@@ -55,6 +57,8 @@ gameplatform/
     │   └── deps.py         FastAPI 依赖注入（require_admin）
     ├── blog/
     │   ├── routes.py       公开博客 API（GET /api/blog/*）
+    │   ├── pages.py        博客 HTML、SEO、站点地图与首屏数据
+    │   ├── rendering.py    Markdown 渲染、HTML 清洗和图片属性
     │   └── admin_routes.py 管理 CRUD API（POST /api/admin/*）
     ├── games/
     │   ├── __init__.py     游戏注册表
@@ -90,7 +94,7 @@ frontend/                   Vue 3 前端源码
 - HTTP / WebSocket 入口
 - 维护全局 `RoomRegistry` 和事件循环引用
 - 集成 blog/admin router
-- SPA catch-all：非 API/WS/assets 路径返回 `dist/index.html`
+- 博客页面路由优先于 SPA catch-all；游戏/后台返回带非索引元信息的 `dist/index.html`
 - REST API：`GET /api/games`、`GET /api/rules/{game_id}`
 
 ### `net_bridge.py`（`NetBridge`）
@@ -107,10 +111,14 @@ frontend/                   Vue 3 前端源码
 ### `db/__init__.py`
 - SQLite + WAL 模式 + foreign_keys
 - 表：admin_users, categories, posts (含 pinned), tags, post_tags, sessions
+- HTTP 写操作和 Session 写入使用各自的事务连接，异常或取消时回滚；共享连接用于读取，避免请求间交叉提交
+- 公开列表批量查询当前页标签，非空页固定三次 SELECT；组合索引覆盖公开列表和分类排序
 
 ### `blog/` + `auth/`
 - 完整的博客 CRUD + session 认证
 - bcrypt 密码哈希，HTTP-only cookie session
+- 博客页面由 FastAPI 预渲染正文和元信息，通过 JSON bootstrap 交给 Vue；游戏和管理页面保留 SPA
+- 服务端和客户端 Markdown 均清洗 HTML，站点地图仅枚举公开文章
 
 ---
 
@@ -120,7 +128,7 @@ frontend/                   Vue 3 前端源码
 asyncio 事件循环（主线程）
   │
   ├─ ws_endpoint()         — 每个 WebSocket 连接的协程
-  ├─ _schedule_per_player  — 逐个向在线玩家发送定制状态
+  ├─ broadcast_loop       — 发送游戏线程生成的玩家视图快照
   └─ _start_countdown()    — 满员倒计时
 
 daemon 线程（每局游戏一个）
@@ -153,5 +161,5 @@ def get_state_for_player(self, player_idx: int) -> dict:
 2. **游戏不感知 WebSocket**：游戏插件只通过 `AbstractBridge` 接口通信
 3. **单机模式零影响**：游戏 repo 原有代码不受 `online/` 目录影响
 4. **Per-player 状态**：`broadcast_state()` 为每个玩家发送定制视图
-5. **断线 AI 接管**：玩家断线后 AI 自动接管，全员离线则终局
+5. **断线恢复**：默认 30 秒宽限期内恢复座位和未完成请求，超时才切换 AI；显式离房立即接管，全员离开后回收房间
 6. **前后端分离**：Vue SPA 通过 REST API + WebSocket 与后端交互

@@ -70,12 +70,11 @@ ok "Python $PY_VER"
 
 # Node.js
 if ! command -v node &>/dev/null; then
-    err "未找到 node，请安装 Node.js 18+：\n  curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -\n  sudo apt install -y nodejs"
+    err "未找到 node，请根据 frontend/.nvmrc 安装受支持的 Node.js LTS"
 fi
 NODE_VER=$(node -v | sed 's/v//')
-NODE_MAJOR=$(echo "$NODE_VER" | cut -d. -f1)
-if [[ $NODE_MAJOR -lt 18 ]]; then
-    err "Node.js 版本过低: $NODE_VER (需要 >= 18)"
+if ! node frontend/tools/check-node.mjs; then
+    err "Node.js 版本不兼容: $NODE_VER，请使用 frontend/.nvmrc 中的版本"
 fi
 ok "Node.js $NODE_VER"
 
@@ -126,7 +125,7 @@ if [[ ! -d "frontend" ]]; then
     warn "未找到 frontend/ 目录，跳过前端构建"
 else
     cd frontend
-    npm install --silent
+    npm ci --no-audit --no-fund
     npm run build
     cd "$GP_ROOT"
     ok "前端构建完成 → framework/static/dist/"
@@ -136,12 +135,8 @@ echo ""
 # ── Step 6: 初始化数据库 ─────────────────────────────────────────────────────
 info "初始化数据库..."
 
-if [[ -f "blog.db" ]]; then
-    ok "数据库已存在 (blog.db)，跳过初始化"
-else
-    python -m framework init-db
-    ok "数据库已初始化"
-fi
+python -m framework init-db
+ok "数据库已初始化（现有数据保留，应用幂等结构更新）"
 echo ""
 
 # ── Step 7: 创建管理员账号 ───────────────────────────────────────────────────
@@ -165,6 +160,8 @@ After=network.target
 User=$(whoami)
 WorkingDirectory=$GP_ROOT
 Environment=PATH=$GP_ROOT/.venv/bin:/usr/bin:/bin
+# 生产部署前填写实际 HTTPS 域名（不含路径），取消下一行注释
+# Environment=PUBLIC_BASE_URL=https://YOUR_DOMAIN
 ExecStart=$GP_ROOT/.venv/bin/python -m uvicorn framework.server:app --host 127.0.0.1 --port 8000 --log-level warning
 Restart=on-failure
 RestartSec=5

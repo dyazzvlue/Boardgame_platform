@@ -5,17 +5,40 @@ framework/db — SQLite 数据库管理模块。
 from __future__ import annotations
 
 import aiosqlite
+import os
+from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import AsyncIterator
 
-_DB_PATH = Path(__file__).resolve().parent.parent / 'data' / 'blog.db'
+_DB_PATH = Path(os.environ.get(
+    'GAMEPLATFORM_DB_PATH', Path(__file__).resolve().parent.parent / 'data' / 'blog.db',
+))
 _db: aiosqlite.Connection | None = None
 
 
 async def get_db() -> aiosqlite.Connection:
-    """获取当前数据库连接（FastAPI 依赖注入用）。"""
+    """获取共享读连接；CLI 仍可在此连接上执行自己的写入并提交。"""
     if _db is None:
         raise RuntimeError("Database not initialized. Call init_db() first.")
     return _db
+
+
+@asynccontextmanager
+async def write_transaction() -> AsyncIterator[aiosqlite.Connection]:
+    """每次写入使用独立连接，成功提交，异常或取消时回滚并关闭。"""
+    await get_db()
+    db = await aiosqlite.connect(str(_DB_PATH))
+    try:
+        db.row_factory = aiosqlite.Row
+        await db.execute("PRAGMA foreign_keys=ON")
+        await db.execute("BEGIN IMMEDIATE")
+        yield db
+        await db.commit()
+    except BaseException:
+        await db.rollback()
+        raise
+    finally:
+        await db.close()
 
 
 async def init_db() -> None:
@@ -99,5 +122,10 @@ CREATE INDEX IF NOT EXISTS idx_posts_published ON posts(published);
 CREATE INDEX IF NOT EXISTS idx_posts_category ON posts(category_id);
 CREATE INDEX IF NOT EXISTS idx_posts_created ON posts(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_posts_pinned ON posts(pinned);
+CREATE INDEX IF NOT EXISTS idx_posts_public_order
+    ON posts(published, pinned DESC, created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_posts_category_public_order
+    ON posts(category_id, published, pinned DESC, created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_post_tags_tag_post ON post_tags(tag_id, post_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
 """

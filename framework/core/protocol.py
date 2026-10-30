@@ -8,12 +8,15 @@ class MsgType:
     ERROR      = "error"
     GAME_OVER  = "game_over"
     PONG       = "pong"
+    RESPONSE_ACK = "response_ack"
     COUNTDOWN  = "countdown"   # 倒计时（满员自动开始）
 
     # Client → Server
     LIST       = "list"
     CREATE     = "create"
     JOIN       = "join"
+    RESUME     = "resume"
+    LEAVE_ROOM = "leave_room"
     RESPONSE   = "response"
     PING       = "ping"
     ADD_AI     = "add_ai"      # 房主添加 AI
@@ -36,3 +39,4 @@ class ErrorCode:
     INVALID_MSG    = "invalid_msg"
     NOT_YOUR_TURN  = "not_your_turn"
     FORBIDDEN      = "forbidden"
+    RESUME_EXPIRED = "resume_expired"

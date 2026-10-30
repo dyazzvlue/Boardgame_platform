@@ -15,10 +15,11 @@
 - **Vue 3 前端**：SPA 架构，Vite 构建，组件化游戏渲染器
 - **Per-Player State**：每个玩家只看到自己可见的信息（角色、手牌等）
 - **博客系统**：内置 Markdown 博客，支持分类、标签、置顶
+- **博客正文预渲染**：FastAPI 输出可直接阅读的文章 HTML，Vue 接管交互，支持文章元信息和站点地图
 - **管理后台**：文章 CRUD、分类管理，session 认证
 - **房间系统**：6 位房间码 + 可选密码，支持多人同时游玩
 - **观战模式**：任意人数观战，实时同步游戏状态
-- **断线 AI 接管**：玩家断线后自动切换为 AI，游戏继续进行
+- **断线恢复**：默认保留座位 30 秒，自动重连恢复状态，超时后由 AI 接管
 - **满员自动开始**：房间满员后倒计时自动开始
 
 ---
@@ -28,7 +29,7 @@
 ### 环境要求
 
 - Python >= 3.10
-- Node.js >= 18
+- Node.js 22.12+（22.x）或 24+，推荐使用 `frontend/.nvmrc` 固定的 LTS 版本
 - Git
 
 ### 一键部署
@@ -52,7 +53,7 @@ bash tools/fetch-games.sh
 
 # 3. 构建前端
 cd frontend
-npm install
+npm ci
 npm run build
 cd ..
 
@@ -79,6 +80,37 @@ npm run dev
 ```
 
 前端开发服务器（通常 `http://localhost:5173`）会代理 API/WebSocket 到后端。
+
+### 回归验证
+
+```bash
+pip install -r requirements.txt -e '.[test]'
+cd frontend && npm ci && npm run build && cd ..
+bash tools/test-startup.sh
+```
+
+测试使用临时数据库，不写入现有博客数据。可通过 `PYTHON=/path/to/venv/bin/python`
+为启动和验证脚本指定解释器。五个游戏仓库必须与平台一起更新；旧适配器不支持新的包隔离。
+
+浏览器回归（需先激活已安装测试依赖的 Python 虚拟环境）：
+
+```bash
+cd frontend
+npx playwright install chromium
+npm run test:e2e
+```
+
+浏览器测试自动启动仅本地监听的临时服务，使用独立数据库和测试账号，
+不会连接线上服务或复用已有端口。
+
+博客生产部署应设置 `PUBLIC_BASE_URL=https://你的域名`，用于 canonical、分享元信息和
+`/sitemap.xml`。预渲染由现有 Python 服务完成，不需要额外运行 Node.js 服务。
+Markdown 在服务端和浏览器端均清洗 HTML；脚本、事件属性和危险链接不会作为可执行内容输出。
+首页、分类、文章页在禁用 JavaScript 时仍可阅读；Vue 复用首屏数据，后续导航再请求 API。
+页面包含 description、canonical、Open Graph、Twitter 和文章结构化数据；切换到游戏或后台会清除文章元信息。
+封面预留显示尺寸，列表与正文图片延迟加载、异步解码，文章首屏封面优先加载。
+发布、编辑、删除、撤回立即读取数据库生效，不必重建前端；HTML 与站点地图不缓存。
+未配置 `PUBLIC_BASE_URL` 时页面仍可用，但站点地图返回 503，避免将请求 Host 当作正式域名。
 
 ---
 
@@ -119,7 +151,7 @@ gameplatform/
 | 阿瓦隆 | `avalon` | 5–10 | [Boardgame_Avalon](https://github.com/dyazzvlue/Boardgame_Avalon) |
 | 印加宝藏 | `incan_gold` | 3–8 | [Boardgame_IncanGold](https://github.com/dyazzvlue/Boardgame_IncanGold) |
 | 掼蛋 | `guandan` | 4 | [Boardgame_guandan](https://github.com/dyazzvlue/Boardgame_guandan) |
-| 变换卡牌 | `transcard` | 2–4 | [Boardgame_transfercard](https://github.com/dyazzvlue/Boardgame_transfercard) |
+| 变换卡牌 | `transcard` | 3–6 | [Boardgame_transfercard](https://github.com/dyazzvlue/Boardgame_transfercard) |
 
 ---
 

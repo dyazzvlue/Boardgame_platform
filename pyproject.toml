@@ -15,10 +15,14 @@ dependencies = [
     "aiosqlite>=0.19",
     "click>=8.0",
     "python-multipart>=0.0.5",
+    "pydantic>=2,<3",
+    "markdown-it-py>=4,<5",
+    "bleach>=6,<7",
 ]
 
 [project.optional-dependencies]
 manila = ["pygame>=2.0"]
+test = ["httpx>=0.24,<0.25", "pytest>=8,<9"]
 
 [tool.setuptools.packages.find]
 where = ["."]

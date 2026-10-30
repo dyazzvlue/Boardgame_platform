@@ -3,20 +3,22 @@ framework/server.py — FastAPI 服务器入口。
 启动: uvicorn framework.server:app --host 0.0.0.0 --port 8000
 """
 from __future__ import annotations
-import asyncio, json, logging, threading, time
+import asyncio, json, logging, os, threading, time
 from collections import deque
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from websockets.exceptions import ConnectionClosed
 
 from .core.protocol import MsgType, ErrorCode
 from .room import RoomRegistry
 from .games import get_game_class, list_games
-from .net_bridge import NetBridge
+from .net_bridge import GameStopped, NetBridge
 from .db import init_db, close_db
 from .blog import blog_router, admin_router
+from .blog.pages import router as blog_pages, metadata, page_response, public_base_url
 
 app = FastAPI(title='GamePlatform')
 _registry = RoomRegistry()
@@ -30,6 +32,9 @@ _MAX_CONNS_PER_IP = 10      # 每 IP 最多同时在线连接数
 _MAX_CREATES_PER_MIN = 5    # 每 IP 每分钟最多创建房间数
 _ip_connections: dict = {}  # ip -> 当前在线连接数
 _ip_creates: dict = {}      # ip -> deque of create timestamps
+RECONNECT_GRACE_SECONDS = float(os.environ.get('ROOM_RECONNECT_GRACE_SECONDS', '30'))
+if not 0 <= RECONNECT_GRACE_SECONDS <= 600:
+    raise ValueError('ROOM_RECONNECT_GRACE_SECONDS must be between 0 and 600')
 
 if _STATIC.exists():
     app.mount('/static', StaticFiles(directory=str(_STATIC), html=False), name='static')
@@ -42,27 +47,32 @@ if _DIST.exists():
 
 @app.on_event("startup")
 async def _startup():
+    public_base_url()
     await init_db()
 
 @app.on_event("shutdown")
 async def _shutdown():
+    for room in list(_registry._rooms.values()):
+        await _close_room(room)
     await close_db()
 
 app.include_router(blog_router)
 app.include_router(admin_router)
-
-@app.get('/')
-async def index():
-    f = _STATIC / 'dist' / 'index.html'
-    if f.exists():
-        return FileResponse(str(f))
-    return FileResponse(str(_STATIC / 'index.html'))
+app.include_router(blog_pages)
 
 
 @app.get('/favicon.ico', include_in_schema=False)
 async def favicon():
     from fastapi.responses import Response
     return Response(status_code=204)
+
+
+@app.get('/favicon.svg', include_in_schema=False)
+async def svg_favicon():
+    path = _DIST / 'favicon.svg'
+    if not path.is_file():
+        raise HTTPException(404, 'Favicon not built')
+    return FileResponse(path, media_type='image/svg+xml')
 
 
 # ── REST API ──────────────────────────────────────────────────────────────────
@@ -95,9 +105,14 @@ async def _broadcast_room(room):
         if not m.connected or m.is_ai:
             continue
         try:
-            await m.ws.send_json({**base, 'your_idx': m.player_idx if not m.is_spectator else -1})
-        except Exception:
-            pass
+            await asyncio.wait_for(m.ws.send_json({
+                **base, 'your_idx': m.player_idx if not m.is_spectator else -1,
+                'resume_token': m.resume_token,
+                'reconnect_grace_seconds': RECONNECT_GRACE_SECONDS,
+            }), timeout=10)
+        except (OSError, RuntimeError, ConnectionClosed, asyncio.TimeoutError):
+            _logger.info('Room broadcast connection lost room=%s', room.code)
+            asyncio.create_task(_disconnect_member(room, m, m.ws))
 
 
 async def _broadcast_raw(room, msg: dict):
@@ -106,9 +121,92 @@ async def _broadcast_raw(room, msg: dict):
         if not m.connected or m.is_ai:
             continue
         try:
-            await m.ws.send_json(msg)
-        except Exception:
-            pass
+            await asyncio.wait_for(m.ws.send_json(msg), timeout=10)
+        except (OSError, RuntimeError, ConnectionClosed, asyncio.TimeoutError):
+            _logger.info('Room broadcast connection lost room=%s', room.code)
+            asyncio.create_task(_disconnect_member(room, m, m.ws))
+
+
+def _cancel_countdown(room):
+    task = room._countdown_task
+    room._countdown_task = None
+    if task and task is not asyncio.current_task() and not task.done():
+        task.cancel()
+
+
+async def _close_room(room):
+    _registry.remove(room.code)
+    _cancel_countdown(room)
+    if room._bridge:
+        room._bridge.terminate()
+    tasks = list(room._disconnect_tasks.values())
+    room._disconnect_tasks.clear()
+    if room._broadcast_task:
+        tasks.append(room._broadcast_task)
+    for task in tasks:
+        if task is not asyncio.current_task() and not task.done():
+            task.cancel()
+    await asyncio.gather(
+        *(task for task in tasks if task is not asyncio.current_task()),
+        return_exceptions=True,
+    )
+    for member in list(room.members):
+        if member.connected and member.is_spectator:
+            try:
+                await member.ws.send_json({
+                    'type': MsgType.ERROR, 'code': 'room_closed', 'msg': '房间已关闭',
+                })
+                await member.ws.close()
+            except (OSError, RuntimeError, ConnectionClosed):
+                _logger.info('Spectator disconnected during room cleanup room=%s', room.code)
+        member.connected = False
+    thread = room.game_thread
+    if thread and thread.is_alive():
+        await asyncio.to_thread(thread.join, 1)
+        if thread.is_alive():
+            _logger.warning('Game thread has not stopped after room cleanup room=%s', room.code)
+
+
+async def _finalize_departure(room, member):
+    task = room._disconnect_tasks.pop(member.resume_token, None)
+    if task and task is not asyncio.current_task():
+        task.cancel()
+    try:
+        if room._bridge and not member.is_spectator:
+            room._bridge._handle_disconnect(member)
+        else:
+            member.disconnect_handled = True
+    except Exception:
+        _logger.exception('Game disconnect callback failed room=%s', room.code)
+    finally:
+        room.remove_member(member.ws)
+        member.disconnect_handled = True
+    if not room.has_humans():
+        await _close_room(room)
+    else:
+        await _broadcast_room(room)
+
+
+async def _disconnect_member(room, member, ws, *, immediate=False):
+    if member.ws is not ws or member.disconnect_handled:
+        return
+    if not immediate and member.disconnect_deadline is not None:
+        return
+    _cancel_countdown(room)
+    member.connected = False
+    member.disconnect_deadline = time.monotonic() + RECONNECT_GRACE_SECONDS
+    if not room.started:
+        await _broadcast_raw(room, {'type': MsgType.COUNTDOWN, 'seconds': 0})
+    if immediate or member.is_spectator or RECONNECT_GRACE_SECONDS == 0:
+        await _finalize_departure(room, member)
+        return
+    async def expire():
+        await asyncio.sleep(RECONNECT_GRACE_SECONDS)
+        if member.ws is ws and not member.connected:
+            await _finalize_departure(room, member)
+
+    room._disconnect_tasks[member.resume_token] = asyncio.create_task(expire())
+    await _broadcast_room(room)
 
 
 # ── 倒计时 ────────────────────────────────────────────────────────────────────
@@ -121,7 +219,7 @@ async def _start_countdown(room, loop):
         for remaining in range(_COUNTDOWN_SECS, 0, -1):
             await _broadcast_raw(room, {'type': MsgType.COUNTDOWN, 'seconds': remaining})
             await asyncio.sleep(1)
-        if not room.started:
+        if not room.started and room.ready():
             await _start_game(room, loop)
     except asyncio.CancelledError:
         # 被房主手动开始或房间解散取消
@@ -130,9 +228,9 @@ async def _start_countdown(room, loop):
 
 async def _trigger_full(room, loop):
     """当房间满员时触发（或重置）倒计时。"""
-    if room._countdown_task and not room._countdown_task.done():
-        room._countdown_task.cancel()
-    room._countdown_task = asyncio.create_task(_start_countdown(room, loop))
+    _cancel_countdown(room)
+    if room.ready():
+        room._countdown_task = asyncio.create_task(_start_countdown(room, loop))
 
 
 # ── WebSocket 路由 ────────────────────────────────────────────────────────────
@@ -151,8 +249,7 @@ async def ws_endpoint(ws: WebSocket):
     member = None
 
     async def send(msg):
-        try: await ws.send_json(msg)
-        except Exception: pass
+        await ws.send_json(msg)
 
     async def err(code, msg_text):
         await send({'type': MsgType.ERROR, 'code': code, 'msg': msg_text})
@@ -162,11 +259,63 @@ async def ws_endpoint(ws: WebSocket):
             raw = await ws.receive_text()
             try:
                 data = json.loads(raw)
-            except Exception:
+            except json.JSONDecodeError:
                 await err(ErrorCode.INVALID_MSG, 'JSON 解析失败')
+                continue
+            if not isinstance(data, dict):
+                await err(ErrorCode.INVALID_MSG, '消息必须是 JSON 对象')
                 continue
 
             t = data.get('type', '')
+            if t in (MsgType.CREATE, MsgType.JOIN, MsgType.RESUME) and member is not None:
+                await err(ErrorCode.INVALID_MSG, '请先离开当前房间')
+                continue
+            if room is not None and member is not None and member.ws is not ws:
+                await ws.close(code=4001, reason='连接已恢复到另一页面')
+                break
+
+            if t == MsgType.RESUME:
+                code = str(data.get('room', '')).upper()[:6]
+                token = str(data.get('token', ''))
+                candidate = _registry.get(code)
+                previous = None
+                if candidate and token.isascii() and len(token) <= 128:
+                    previous = next((m.ws for m in candidate.members
+                                     if m.resume_token == token), None)
+                    resumed = candidate.resume_member(token, ws, time.monotonic())
+                else:
+                    resumed = None
+                if resumed is None:
+                    await err(ErrorCode.RESUME_EXPIRED, '恢复已过期，请重新进入大厅')
+                    continue
+                room, member = candidate, resumed
+                task = room._disconnect_tasks.pop(member.resume_token, None)
+                if task:
+                    task.cancel()
+                if previous is not None and previous is not ws:
+                    try:
+                        await previous.close(code=4001, reason='连接已恢复')
+                    except (OSError, RuntimeError, ConnectionClosed):
+                        _logger.info('Previous connection already closed room=%s', room.code)
+                await _broadcast_room(room)
+                if room._bridge:
+                    await send(room._bridge.state_for(member.player_idx))
+                    pending = room._bridge.pending_for(member.player_idx)
+                    if pending:
+                        await send(pending)
+                if room._game_ended:
+                    await send({'type': MsgType.GAME_OVER, 'game_id': room.game_id,
+                                'result': room.result})
+                if not room.started and room.ready():
+                    await _trigger_full(room, loop)
+                continue
+
+            if t in (MsgType.LEAVE_ROOM, MsgType.LEAVE_GAME):
+                if room is not None and member is not None:
+                    await _disconnect_member(room, member, ws, immediate=True)
+                    room, member = None, None
+                await send({'type': 'left_room'})
+                continue
 
             # ── PING ──────────────────────────────────────────────────────
             if t == MsgType.PING:
@@ -204,6 +353,9 @@ async def ws_endpoint(ws: WebSocket):
                 if not name:
                     await err(ErrorCode.INVALID_MSG, '玩家名不能为空')
                     continue
+                if len(pwd.encode()) > 72:
+                    await err(ErrorCode.INVALID_MSG, '密码最多 72 字节')
+                    continue
                 if len(_registry._rooms) >= MAX_ROOMS:
                     await err(ErrorCode.INVALID_MSG, '服务器房间数已达上限，请稍后再试')
                     continue
@@ -215,10 +367,15 @@ async def ws_endpoint(ws: WebSocket):
                     await err(ErrorCode.INVALID_MSG, '创建太频繁，请稍后再试')
                     continue
                 creates.append(now)
-                room   = _registry.create(gid, count, pwd, turn_timeout=timeout)
+                try:
+                    room = await asyncio.to_thread(
+                        _registry.create, gid, count, pwd, timeout, MAX_ROOMS,
+                    )
+                except ValueError:
+                    await err(ErrorCode.INVALID_MSG, '服务器房间数已达上限')
+                    continue
                 member = room.add_player(ws, name)
-                await send({'type': MsgType.ROOM, **room.to_dict(),
-                            'your_idx': member.player_idx})
+                await _broadcast_room(room)
 
             # ── JOIN ──────────────────────────────────────────────────────
             elif t == MsgType.JOIN:
@@ -230,23 +387,35 @@ async def ws_endpoint(ws: WebSocket):
                     await err(ErrorCode.INVALID_MSG, '玩家名不能为空')
                     continue
 
-                room = _registry.get(code)
-                if room is None:
+                candidate = _registry.get(code)
+                if candidate is None:
                     await err(ErrorCode.ROOM_NOT_FOUND, f'房间 {code} 不存在')
-                    room = None; continue
-                if not room.check_password(pwd):
+                    continue
+                if len(pwd.encode()) > 72:
+                    await err(ErrorCode.INVALID_MSG, '密码最多 72 字节')
+                    continue
+                if not await asyncio.to_thread(candidate.check_password, pwd):
                     await err(ErrorCode.WRONG_PASSWORD, '密码错误')
-                    room = None; continue
-                if not spectate and room.is_full():
+                    continue
+                if _registry.get(code) is not candidate:
+                    await err(ErrorCode.ROOM_NOT_FOUND, '房间已关闭')
+                    continue
+                if not spectate and candidate.is_full():
                     await err(ErrorCode.ROOM_FULL, '房间已满')
-                    room = None; continue
-                if not spectate and room.started:
+                    continue
+                if not spectate and (candidate.started or candidate.starting):
                     await err(ErrorCode.GAME_STARTED, '游戏已开始')
-                    room = None; continue
+                    continue
 
+                room = candidate
                 member   = room.add_spectator(ws, name) if spectate else room.add_player(ws, name)
                 # 广播给全房间
                 await _broadcast_room(room)
+                if spectate and room._bridge:
+                    await send(room._bridge.state_for(-1))
+                    if room._game_ended:
+                        await send({'type': MsgType.GAME_OVER, 'game_id': room.game_id,
+                                    'result': room.result})
                 # 新加入者也单独收到含 your_idx 的消息（broadcast_room 已涵盖）
 
                 # 满员则触发倒计时
@@ -263,7 +432,7 @@ async def ws_endpoint(ws: WebSocket):
                 if room.is_full():
                     await err(ErrorCode.ROOM_FULL, '房间已满，无法添加 AI')
                     continue
-                if room.started:
+                if room.started or room.starting:
                     continue
                 ai_member = room.add_ai()
                 if ai_member is None:
@@ -280,12 +449,10 @@ async def ws_endpoint(ws: WebSocket):
                 if room.host_ws is not ws:
                     await err(ErrorCode.FORBIDDEN, '只有房主可以开始游戏')
                     continue
-                if room.started:
+                if room.started or room.starting:
                     continue
                 # 取消倒计时后立即开始
-                if room._countdown_task and not room._countdown_task.done():
-                    room._countdown_task.cancel()
-                    room._countdown_task = None
+                _cancel_countdown(room)
                 # 广播取消倒计时
                 await _broadcast_raw(room, {'type': MsgType.COUNTDOWN, 'seconds': 0})
                 await _start_game(room, loop)
@@ -297,7 +464,7 @@ async def ws_endpoint(ws: WebSocket):
                 if room.host_ws is not ws:
                     await err(ErrorCode.FORBIDDEN, '只有房主可以更换游戏')
                     continue
-                if room.started:
+                if room.started or room.starting:
                     continue
                 new_gid = str(data.get('game_id', ''))[:32]
                 ginfo_map = {g['id']: g for g in list_games()}
@@ -321,7 +488,11 @@ async def ws_endpoint(ws: WebSocket):
                     continue
                 room.game_id = new_gid
                 room.player_count = new_count
+                _cancel_countdown(room)
+                await _broadcast_raw(room, {'type': MsgType.COUNTDOWN, 'seconds': 0})
                 await _broadcast_room(room)
+                if room.ready():
+                    await _trigger_full(room, loop)
 
             # ── RESPONSE ──────────────────────────────────────────────────
             elif t == MsgType.RESPONSE:
@@ -330,22 +501,14 @@ async def ws_endpoint(ws: WebSocket):
                 if member.is_spectator:
                     continue
                 bridge = getattr(room, '_bridge', None)
-                if bridge:
-                    bridge.receive_response(member.player_idx,
-                                            data.get('kind', ''), data.get('value'))
-
-            # ── LEAVE_GAME ────────────────────────────────────────────────
-            elif t == MsgType.LEAVE_GAME:
-                if room is None or member is None or member.is_spectator:
-                    continue
-                if not room.started:
-                    continue
-                bridge = getattr(room, '_bridge', None)
-                if bridge:
-                    bridge.handle_leave(member.player_idx)
-                room.remove_member(ws)
-                room = None
-                member = None
+                accepted = bool(bridge and bridge.receive_response(
+                    member.player_idx, data.get('kind', ''), data.get('value'),
+                    data.get('request_id', ''),
+                ))
+                await send({
+                    'type': MsgType.RESPONSE_ACK, 'request_id': data.get('request_id', ''),
+                    'accepted': accepted, 'msg': '' if accepted else '操作已过期，请等待最新状态',
+                })
 
             # ── RESTART_VOTE ──────────────────────────────────────────────
             elif t == MsgType.RESTART_VOTE:
@@ -367,7 +530,6 @@ async def ws_endpoint(ws: WebSocket):
                         await asyncio.get_event_loop().run_in_executor(
                             None, lambda: gt.join(timeout=3)
                         )
-                    room.clear_restart_state()
                     await _start_game(room, loop)
 
             # ── RETURN_ROOM ───────────────────────────────────────────────
@@ -382,6 +544,8 @@ async def ws_endpoint(ws: WebSocket):
                     old_bt.cancel()
                 room._broadcast_task = None
                 room.started = False
+                if room._bridge:
+                    room._bridge.terminate()
                 room._bridge = None
                 room.clear_ai_players()
                 room.clear_restart_state()
@@ -422,57 +586,107 @@ async def ws_endpoint(ws: WebSocket):
                     await asyncio.get_event_loop().run_in_executor(
                         None, lambda: gt.join(timeout=3)
                     )
-                room.clear_restart_state()
                 await _start_game(room, loop)
 
-    except WebSocketDisconnect:
-        pass
+            else:
+                await err(ErrorCode.INVALID_MSG, '未知消息类型')
+
+    except (WebSocketDisconnect, OSError, ConnectionClosed):
+        _logger.info('WebSocket connection closed')
     finally:
         _ip_connections[client_ip] = max(0, _ip_connections.get(client_ip, 0) - 1)
+        if not _ip_connections[client_ip]:
+            _ip_connections.pop(client_ip, None)
         if room and member:
-            room.remove_member(ws)
-            bridge = getattr(room, '_bridge', None)
-            if bridge and not member.is_spectator:
-                bridge._handle_disconnect(member)
+            await _disconnect_member(room, member, ws)
 
 
 async def _start_game(room, loop):
-    room.started = True
-    await _broadcast_room(room)  # 通知所有客户端游戏已开始 → initGameUI
-    game_cls = get_game_class(room.game_id)
-    game     = game_cls()
-    bridge   = NetBridge(room=room, loop=loop)
-    bridge.set_game(game)
-    game.bridge  = bridge
+    if room.starting or (room.started and not room._game_ended):
+        return False
+    if any(not m.connected and not m.is_ai and not m.disconnect_handled for m in room.players):
+        await _broadcast_raw(room, {
+            'type': MsgType.ERROR, 'code': 'player_reconnecting',
+            'msg': '有玩家正在重连，请稍后开始',
+        })
+        return False
+    old_thread = room.game_thread
+    if old_thread and old_thread.is_alive():
+        await asyncio.to_thread(old_thread.join, 3)
+        if old_thread.is_alive():
+            await _broadcast_raw(room, {
+                'type': MsgType.ERROR, 'code': 'game_busy', 'msg': '上一局尚未结束，请稍后重试',
+            })
+            return False
+    room.starting = True
+    _cancel_countdown(room)
+    bridge = NetBridge(
+        room, loop, on_disconnect=lambda member: _disconnect_member(room, member, member.ws),
+    )
+    try:
+        game_cls = get_game_class(room.game_id)
+        game = game_cls()
+        bridge.set_game(game)
+        game.bridge = bridge
+        original_players = list(room.players)
+        names = [m.name for m in room.players]
+        flags = [not m.is_ai and not m.disconnect_handled for m in room.players]
+        while len(names) < room.player_count:
+            names.append(f'AI-{len(names) + 1}')
+            flags.append(False)
+        await asyncio.to_thread(game.setup, names, flags)
+        if room.players != original_players or any(
+                not m.connected and not m.is_ai for m in original_players):
+            raise RuntimeError('Room membership changed during game initialization')
+        for member in room.members:
+            if member.connected and not member.is_ai:
+                bridge.state_for(member.player_idx)
+        if _registry.get(room.code) is not room:
+            bridge.terminate()
+            return False
+    except Exception:
+        bridge.terminate()
+        _logger.exception('Game initialization failed room=%s', room.code)
+        await _broadcast_raw(room, {
+            'type': MsgType.ERROR, 'code': 'game_start_failed',
+            'msg': '游戏初始化失败，请联系管理员或切换游戏',
+        })
+        return False
+    finally:
+        room.starting = False
+
+    old_bridge = room._bridge
+    if old_bridge:
+        old_bridge.terminate()
+    old_task = room._broadcast_task
+    if old_task and not old_task.done():
+        old_task.cancel()
+        await asyncio.gather(old_task, return_exceptions=True)
     room._bridge = bridge
-
-    # 按照 room.players 的顺序构建 names / flags
-    # AI RoomMember 已由房主提前加入，is_ai=True
-    names = [m.name for m in room.players]
-    flags = [not m.is_ai for m in room.players]
-    # 若总人数仍不足 player_count（房主没填满就手动开始），剩余由 AI 补齐
-    while len(names) < room.player_count:
-        names.append(f'AI-{len(names) + 1}')
-        flags.append(False)
-
-    game.setup(names, flags)
-    # 取消旧的 broadcast 循环（restart 场景）
-    old_bt = getattr(room, '_broadcast_task', None)
-    if old_bt and not old_bt.done():
-        old_bt.cancel()
+    while len(room.players) < room.player_count:
+        room.add_ai()
+    room.started = True
+    room.clear_restart_state()
     room._broadcast_task = asyncio.create_task(bridge.broadcast_loop())
-
-    def _run():
-        try: game.run()
-        except Exception:
-            _logger.exception('游戏线程崩溃 room=%s', room.code)
-            bridge.log('⚠ 游戏遇到意外错误，请联系管理员', 'warn')
-
-    t = threading.Thread(target=_run, daemon=True)
-    room.game_thread = t
-    t.start()
+    await _broadcast_room(room)
     bridge.log('游戏开始！', 'header')
     bridge.broadcast_state()
+
+    def run():
+        try:
+            game.run()
+            if not room._game_ended and not bridge._terminated:
+                bridge.broadcast_game_over({})
+        except GameStopped:
+            return
+        except Exception:
+            _logger.exception('游戏线程崩溃 room=%s', room.code)
+            if not bridge._terminated:
+                bridge.broadcast_game_over({'error': '游戏发生错误，请返回等待室重试'})
+
+    room.game_thread = threading.Thread(target=run, daemon=True)
+    room.game_thread.start()
+    return True
 
 
 # ── SPA catch-all (must be last) ─────────────────────────────────────────────
@@ -484,7 +698,7 @@ async def spa_fallback(path: str):
     if path.startswith(('api/', 'ws', 'static/', 'assets/')):
         from fastapi.responses import JSONResponse
         return JSONResponse({'error': 'not found'}, status_code=404)
-    f = _STATIC / 'dist' / 'index.html'
-    if f.exists():
-        return FileResponse(str(f))
-    return FileResponse(str(_STATIC / 'index.html'))
+    return page_response(metadata(
+        title="游戏大厅 | Dy's Blog" if path == 'game' else "Dy's Game Room",
+        path='/' + path, noindex=True,
+    ))

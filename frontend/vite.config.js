@@ -20,6 +20,7 @@ export default defineConfig({
     },
   },
   build: {
+    manifest: true,
     outDir: '../framework/static/dist',
     emptyOutDir: true,
   },

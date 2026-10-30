@@ -15,7 +15,9 @@ uvicorn / GamePlatform（仅本地监听）
   ├── /api/admin/*   管理后台 API
   ├── /ws            WebSocket 游戏逻辑
   ├── /assets/*      Vite 构建产物
-  └── /*             SPA fallback (dist/index.html)
+  ├── /post/* 等     博客正文与列表预渲染
+  ├── /sitemap.xml   已发布页面的站点地图
+  └── /*             游戏/后台 SPA fallback
 ```
 
 生产环境中 uvicorn 只监听 `127.0.0.1`，所有外部流量经 Nginx 进入。
@@ -27,7 +29,7 @@ uvicorn / GamePlatform（仅本地监听）
 | 组件 | 最低版本 | 说明 |
 |------|---------|------|
 | Python | 3.10+ | FastAPI + asyncio |
-| Node.js | 18+ | 前端构建 |
+| Node.js | 22.12+（22.x）或 24+ | 前端构建，固定版本见 `frontend/.nvmrc` |
 | npm | 9+ | 随 Node.js 安装 |
 | Git | 2.x | 克隆代码 |
 | Nginx | 1.18+ | 反向代理（生产） |
@@ -67,9 +69,7 @@ sudo apt update && sudo apt install -y \
     nginx certbot python3-certbot-nginx \
     git curl ufw
 
-# 安装 Node.js 20.x（通过 NodeSource）
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt install -y nodejs
+# 另行安装 Node.js LTS 或 nvm；克隆后按 frontend/.nvmrc 选择版本。
 
 # 防火墙
 sudo ufw allow OpenSSH
@@ -83,6 +83,8 @@ sudo ufw enable
 cd /srv
 git clone https://github.com/dyazzvlue/Boardgame_platform.git gameplatform
 cd gameplatform
+# 若使用 nvm：
+cd frontend && nvm install && nvm use && cd ..
 ```
 
 ### 3. Python 环境
@@ -106,7 +108,7 @@ bash tools/fetch-games.sh
 
 ```bash
 cd frontend
-npm install
+npm ci
 npm run build    # 输出到 ../framework/static/dist/
 cd ..
 ```
@@ -203,9 +205,50 @@ source .venv/bin/activate
 git pull --ff-only
 bash tools/fetch-games.sh      # 同步游戏 repo
 pip install -r requirements.txt
-cd frontend && npm install && npm run build && cd ..
+cd frontend && npm ci && npm run build && cd ..
 sudo systemctl restart gameplatform
 ```
+
+更新前应先备份数据库和上传目录，记录平台与五个游戏仓库的提交号。
+本次插件包隔离需要六个仓库配套更新，不能只替换平台代码。
+部署后执行 `bash tools/test-startup.sh`；测试依赖可通过
+`pip install -r requirements.txt -e '.[test]'` 安装。
+
+### 环境变量
+
+| 变量 | 默认值 | 用途 |
+|------|--------|------|
+| `GAMEPLATFORM_DB_PATH` | `framework/data/blog.db` | 数据库位置；测试/预发布请使用独立路径 |
+| `ROOM_RECONNECT_GRACE_SECONDS` | `30` | 玩家断线保留座位秒数，范围 0–600，0 表示立即 AI 接管 |
+| `PUBLIC_BASE_URL` | 未配置 | 生产必设实际 HTTPS 站点源地址（不含路径），用于 canonical、分享 URL 和站点地图 |
+
+宽限期内回合时限仍继续计时，恢复凭证仅保存在当前浏览器会话。主动离房不享受宽限期。
+房间仍保存在内存中，部署重启会中止对局；不要直接增加 uvicorn workers。
+
+### 博客正文预渲染
+
+首页、分类页和文章页由 FastAPI 返回已渲染 HTML，随后由 Vue 接管交互，不需要 Node.js 常驻服务。
+前端构建同时输出 `.vite/manifest.json`，供服务端选择对应页面的 CSS；更新时必须部署整套构建产物。
+缺少构建时应先执行 `npm ci && npm run build`，不能依赖旧版静态页面回退。
+
+在 systemd 的 `[Service]` 中配置实际域名，例如：
+
+```ini
+Environment=PUBLIC_BASE_URL=https://blog.example.com
+Environment=ROOM_RECONNECT_GRACE_SECONDS=30
+```
+
+配置后重新加载并重启服务。检查文章 URL 的原始响应应包含正文，而不只是空的挂载节点；
+草稿文章应返回 404，`/sitemap.xml` 仅包含公开页面，`/robots.txt` 禁止抓取管理后台。
+发布、编辑和撤回文章无需重新构建前端，服务端读取当前数据库生成页面。
+HTML、robots 和站点地图带 `Cache-Control: no-store`；不要在反代/CDN 中覆盖此设置，
+否则已撤回的正文可能继续对外显示。`/assets/` 的哈希资源仍可长期缓存。
+未配置正式域名时使用相对 canonical，不信任请求 Host，站点地图明确返回 503；
+配置了非法协议、路径、查询串或用户信息时服务会在启动时报错。
+
+图片保留原始上传内容，不拉取或转码外站图片。列表封面和正文图设置 `loading="lazy"`、
+`decoding="async"`，首屏封面设置 `fetchpriority="high"`；封面尺寸及 CSS 比例避免布局跳动。
+Markdown HTML 中合法的图片宽高会保留；上传仍限制 5 MB，服务端最多读取上限加一字节。
 
 ---
 

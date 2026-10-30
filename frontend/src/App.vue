@@ -26,7 +26,7 @@ const isAdmin = computed(() => route.path.startsWith('/admin'))
   </div>
 </template>
 
-<style scoped>
+<style>
 .site-header {
   background: #1a1a2e;
   border-bottom: 1px solid #333;
