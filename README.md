@@ -167,6 +167,7 @@ gameplatform/
 | [frontend.md](skill/frontend.md) | Vue 前端开发规范 |
 | [deploy.md](skill/deploy.md) | 生产部署指南 |
 | [debugging.md](skill/debugging.md) | 常见问题排查 |
+| [optimization-opt_dev0.md](skill/optimization-opt_dev0.md) | 本次三批优化、六仓库实现提交对应关系、验收结果与部署注意事项 |
 
 ---
 
