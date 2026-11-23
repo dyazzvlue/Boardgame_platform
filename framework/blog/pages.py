@@ -18,7 +18,7 @@ from ..db import get_db
 from .routes import find_published_post, list_categories, list_posts, list_tags
 
 router = APIRouter()
-_DIST = Path(__file__).resolve().parent.parent / 'static' / 'dist'
+_DIST = Path(os.environ.get('GAMEPLATFORM_DIST_PATH', Path(__file__).resolve().parent.parent / 'static' / 'dist'))
 _logger = logging.getLogger(__name__)
 SITE_TITLE = "Dy's Blog"
 SITE_DESCRIPTION = '个人博客与多人联机桌游。'
@@ -140,9 +140,9 @@ def page_response(meta: dict, body='', bootstrap: dict | None = None,
     template = template.replace('</head>', _head(meta) + (_styles(view, template) if view else '') + '</head>')
     if body:
         shell = (
-            '<div id="app-root"><header class="site-header"><nav class="nav-bar">'
+            '<div id="app-root"><header class="site-header"><nav class="nav-bar" aria-label="站点导航">'
             '<a href="/" class="logo">Dy&#x27;s Blog</a><div class="nav-links">'
-            '<a href="/">博客</a><a href="/game">游戏大厅</a></div></nav></header>'
+            '<a href="/">博客</a><a href="/learn/">学习资料</a><a href="/game">游戏大厅</a></div></nav></header>'
             f'<main class="main-content">{body}</main>'
             '<footer class="site-footer"><p>&copy; 2026 Dy&#x27;s Game Room. All rights reserved.</p></footer></div>'
         )

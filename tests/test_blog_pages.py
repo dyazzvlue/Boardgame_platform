@@ -67,6 +67,14 @@ class BlogPageTests(unittest.TestCase):
         self.assertIsNotNone(match)
         return json.loads(match[1])
 
+    def test_blog_home_keeps_both_learning_and_game_navigation(self):
+        response = self.client.get('/')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('href="/learn/"', response.text)
+        self.assertIn('href="/game"', response.text)
+        self.assertIn('href="/site.css"', response.text)
+        self.assertIn('blog-bootstrap', response.text)
+
     def test_article_html_contains_body_metadata_and_bootstrap_without_api_fetch(self):
         response = self.client.get('/post/article-1')
         self.assertEqual(response.status_code, 200)

@@ -39,7 +39,7 @@ if not 0 <= RECONNECT_GRACE_SECONDS <= 600:
 if _STATIC.exists():
     app.mount('/static', StaticFiles(directory=str(_STATIC), html=False), name='static')
 
-_DIST = _STATIC / 'dist'
+_DIST = Path(os.environ.get('GAMEPLATFORM_DIST_PATH', _STATIC / 'dist'))
 if _DIST.exists():
     app.mount('/assets', StaticFiles(directory=str(_DIST / 'assets')), name='dist_assets')
 
@@ -59,6 +59,34 @@ async def _shutdown():
 app.include_router(blog_router)
 app.include_router(admin_router)
 app.include_router(blog_pages)
+
+
+_LEARNING = Path(__file__).resolve().parent / 'static' / 'learning'
+
+
+@app.get('/learn', include_in_schema=False)
+async def learning_redirect():
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse('/learn/')
+
+
+@app.get('/learn/{path:path}', include_in_schema=False)
+async def learning_file(path: str):
+    if not _LEARNING.is_dir():
+        raise HTTPException(503, 'Learning materials have not been built')
+    root = _LEARNING.resolve()
+    candidate = (root / (path or 'index.html')).resolve()
+    if not candidate.is_relative_to(root) or not candidate.is_file():
+        raise HTTPException(404, 'Learning resource not found')
+    return FileResponse(candidate, headers={'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff'})
+
+
+@app.get('/site.css', include_in_schema=False)
+async def site_styles():
+    candidate = _DIST / 'site.css'
+    if not candidate.is_file():
+        raise HTTPException(404, 'Site styles not built')
+    return FileResponse(candidate, media_type='text/css', headers={'Cache-Control': 'no-cache'})
 
 
 @app.get('/favicon.ico', include_in_schema=False)

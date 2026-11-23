@@ -1,5 +1,24 @@
 # GamePlatform — 部署指南
 
+## 学习资料入口
+
+首页 `/` 继续显示博客；公共导航连接 `/learn/` 学习资料和 `/game` 游戏大厅。
+博客首屏、Vue 页面和学习台使用 `frontend/public/site.css` 的同一套导航与主题。
+
+```bash
+LEARNING_REPO=/home/ubuntu/dy_docs_and_skills bash tools/build-learning.sh
+npm --prefix frontend run build
+```
+
+学习仓库需要支持 `tools/learning/build.cjs --site-dir`。构建脚本只发布
+`00_start` 到 `03_emulator` 中通过公开检查的课程和原文，不发布 `04_n_project`、
+`05_works`、`others`、`infos` 或 Git 目录。出于隐私和版权要求，含 `n_project`
+引用的混合章节也整篇排除，课程索引重新生成，关联的机制和拓扑实验不发布。
+构建必须使用空目录；发布脚本会整体替换旧产物，避免只隐藏导航而保留原文或搜索数据。
+产物位于 `framework/static/learning/`；更新资料后重新构建，源文件与离线模式不受影响。
+学习脚本保留原来的离线模式；本地学习进度仍保存在浏览器，不上传服务器。
+预览时可用 `GAMEPLATFORM_DIST_PATH` 指定独立前端构建目录；生产默认路径不变。
+
 ## 架构概览
 
 ```
