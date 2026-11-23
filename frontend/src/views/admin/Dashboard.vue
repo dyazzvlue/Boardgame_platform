@@ -1,32 +1,61 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { requestJson, createRequestScope, expectArray, errorMessage, isAbortError } from '@/lib/http.js'
 
 const router = useRouter()
-const stats = ref({ posts: 0, categories: 0 })
+const stats = ref(null)
 const admin = ref(null)
+const loading = ref(true)
+const error = ref('')
+const logoutError = ref('')
+const loggingOut = ref(false)
+const readScope = createRequestScope()
+const logoutScope = createRequestScope()
 
-onMounted(async () => {
-  const meRes = await fetch('/api/admin/me')
-  if (!meRes.ok) { router.push('/admin/login'); return }
-  admin.value = await meRes.json()
-
-  const postsRes = await fetch('/api/admin/posts')
-  if (postsRes.ok) {
-    const posts = await postsRes.json()
-    stats.value.posts = posts.length
+async function fetchDashboard() {
+  const current = readScope.begin()
+  loading.value = true
+  error.value = ''
+  stats.value = null
+  try {
+    const me = await requestJson('/api/admin/me', { signal: current.signal })
+    if (!me || typeof me.username !== 'string') throw new Error('账户数据格式不正确，请重试')
+    if (!current.isCurrent()) return
+    admin.value = me
+    const [posts, categories] = await Promise.all([
+      requestJson('/api/admin/posts', { signal: current.signal }),
+      requestJson('/api/blog/categories', { signal: current.signal }),
+    ])
+    expectArray(posts)
+    expectArray(categories)
+    if (current.isCurrent()) stats.value = { posts: posts.length, categories: categories.length }
+  } catch (failure) {
+    if (!current.isCurrent() || isAbortError(failure)) return
+    if (failure.status === 401 || failure.status === 403) router.replace('/admin/login')
+    else error.value = errorMessage(failure)
+  } finally {
+    if (current.isCurrent()) loading.value = false
   }
-  const catRes = await fetch('/api/blog/categories')
-  if (catRes.ok) {
-    const cats = await catRes.json()
-    stats.value.categories = cats.length
-  }
-})
+}
 
 async function logout() {
-  await fetch('/api/admin/logout', { method: 'POST' })
-  router.push('/admin/login')
+  if (loggingOut.value) return
+  const current = logoutScope.begin()
+  loggingOut.value = true
+  logoutError.value = ''
+  try {
+    await requestJson('/api/admin/logout', { method: 'POST', signal: current.signal })
+    if (current.isCurrent()) router.push('/admin/login')
+  } catch (failure) {
+    if (current.isCurrent() && !isAbortError(failure)) logoutError.value = errorMessage(failure)
+  } finally {
+    if (current.isCurrent()) loggingOut.value = false
+  }
 }
+
+onMounted(fetchDashboard)
+onUnmounted(() => { readScope.cancel(); logoutScope.cancel() })
 </script>
 
 <template>
@@ -35,7 +64,7 @@ async function logout() {
       <h1>管理后台</h1>
       <div class="admin-actions">
         <span v-if="admin">{{ admin.username }}</span>
-        <button @click="logout" class="btn-danger">登出</button>
+        <button @click="logout" :disabled="loggingOut" class="btn-danger">{{ loggingOut ? '登出中…' : '登出' }}</button>
       </div>
     </header>
     <nav class="admin-nav">
@@ -44,7 +73,13 @@ async function logout() {
       <router-link to="/admin/categories">分类管理</router-link>
       <router-link to="/">返回前台</router-link>
     </nav>
-    <div class="stats-grid">
+    <p v-if="logoutError" class="request-error" role="alert">{{ logoutError }}；请重试登出。</p>
+    <p v-if="loading" role="status">正在加载统计…</p>
+    <div v-else-if="error" class="request-error" role="alert">
+      <p>{{ error }}</p>
+      <button @click="fetchDashboard">重新加载统计</button>
+    </div>
+    <div v-else-if="stats" class="stats-grid">
       <div class="stat-card card">
         <div class="stat-num">{{ stats.posts }}</div>
         <div class="stat-label">文章</div>
@@ -67,4 +102,5 @@ async function logout() {
 .stat-card { text-align: center; }
 .stat-num { font-size: 2rem; font-weight: 700; color: var(--accent); }
 .stat-label { color: var(--text-muted); margin-top: 0.3rem; }
+.request-error { color: var(--danger); margin-bottom: 1rem; }
 </style>

@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 
 import bcrypt
 
-from ..db import get_db
+from ..db import get_db, write_transaction
 
 SESSION_EXPIRE_HOURS = 24 * 7  # 7 天
 
@@ -26,14 +26,13 @@ def verify_password(password: str, hashed: str) -> bool:
 
 async def create_session(user_id: int) -> str:
     """为用户创建新 session，返回 token。"""
-    db = await get_db()
     token = secrets.token_urlsafe(32)
     expires = datetime.now(timezone.utc) + timedelta(hours=SESSION_EXPIRE_HOURS)
-    await db.execute(
-        "INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
-        (token, user_id, expires.isoformat())
-    )
-    await db.commit()
+    async with write_transaction() as db:
+        await db.execute(
+            "INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
+            (token, user_id, expires.isoformat())
+        )
     return token
 
 
@@ -62,14 +61,12 @@ async def verify_session(token: str) -> dict | None:
 
 async def delete_session(token: str) -> None:
     """删除 session（登出）。"""
-    db = await get_db()
-    await db.execute("DELETE FROM sessions WHERE token = ?", (token,))
-    await db.commit()
+    async with write_transaction() as db:
+        await db.execute("DELETE FROM sessions WHERE token = ?", (token,))
 
 
 async def cleanup_expired_sessions() -> None:
     """清理所有过期 session。"""
-    db = await get_db()
     now = datetime.now(timezone.utc).isoformat()
-    await db.execute("DELETE FROM sessions WHERE expires_at < ?", (now,))
-    await db.commit()
+    async with write_transaction() as db:
+        await db.execute("DELETE FROM sessions WHERE expires_at < ?", (now,))

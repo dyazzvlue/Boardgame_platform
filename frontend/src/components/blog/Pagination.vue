@@ -14,9 +14,9 @@ const totalPages = computed(() => Math.ceil(props.total / props.size))
   </div>
 </template>
 
-<style scoped>
+<style>
 .pagination { display: flex; justify-content: center; align-items: center; gap: 1rem; margin-top: 2rem; }
 .pagination button { background: var(--bg-card); border: 1px solid var(--border); color: var(--text); padding: 0.4rem 1rem; }
 .pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
-.info { color: var(--text-muted); }
+.pagination .info { color: var(--text-muted); }
 </style>

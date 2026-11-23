@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { applyMetadata, pageMetadata } from './lib/blogPage.js'
 
 const routes = [
   {
@@ -78,6 +79,16 @@ router.beforeEach(async (to) => {
       return { name: 'AdminLogin' }
     }
   }
+})
+
+router.afterEach((to, from, failure) => {
+  if (failure || ['BlogHome', 'CategoryView', 'PostDetail'].includes(to.name)) return
+  applyMetadata(pageMetadata({
+    title: to.path.startsWith('/game') ? "游戏大厅 | Dy's Blog"
+      : to.path.startsWith('/admin') ? "管理后台 | Dy's Blog" : "Dy's Blog",
+    path: to.fullPath,
+    noindex: to.path.startsWith('/admin') || to.path.startsWith('/game'),
+  }))
 })
 
 export default router

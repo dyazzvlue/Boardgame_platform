@@ -1,0 +1,20 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Local website demo",
+      "type": "process",
+      "command": "${command:python.interpreterPath}",
+      "args": [
+        "${workspaceFolder}/tools/serve-local-demo.py",
+        "--port",
+        "8000"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "isBackground": true,
+      "problemMatcher": []
+    }
+  ]
+}

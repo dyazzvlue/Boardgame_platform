@@ -4,10 +4,13 @@ bcrypt==4.2.1
 click==8.1.8
 fastapi==0.103.2
 h11==0.14.0
-httptools==0.6.0
+httptools==0.6.4
 python-multipart==0.0.29
+pydantic==2.14.1
+markdown-it-py==4.0.0
+bleach==6.3.0
 starlette==0.27.0
 uvicorn==0.22.0
 websockets==11.0.3
-# 以上版本通过测试（Python 3.10+）
+# Python 3.12 回归验证；最低 Python 版本约束见 pyproject.toml
 # 部署时运行: pip install -r requirements.txt

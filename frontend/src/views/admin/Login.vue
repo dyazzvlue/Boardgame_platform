@@ -1,34 +1,35 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { requestJson, createRequestScope, errorMessage, isAbortError } from '@/lib/http.js'
 
 const router = useRouter()
 const username = ref('')
 const password = ref('')
 const error = ref('')
 const loading = ref(false)
+const loginScope = createRequestScope()
 
 async function login() {
+  if (loading.value) return
+  const current = loginScope.begin()
   error.value = ''
   loading.value = true
   try {
-    const res = await fetch('/api/admin/login', {
+    await requestJson('/api/admin/login', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: username.value, password: password.value }),
+      json: { username: username.value, password: password.value },
+      signal: current.signal,
     })
-    if (!res.ok) {
-      const data = await res.json()
-      error.value = data.detail || '登录失败'
-      return
-    }
-    router.push('/admin')
-  } catch (e) {
-    error.value = '网络错误'
+    if (current.isCurrent()) router.push('/admin')
+  } catch (failure) {
+    if (current.isCurrent() && !isAbortError(failure)) error.value = errorMessage(failure)
   } finally {
-    loading.value = false
+    if (current.isCurrent()) loading.value = false
   }
 }
+
+onUnmounted(() => loginScope.cancel())
 </script>
 
 <template>
@@ -38,13 +39,13 @@ async function login() {
       <form @submit.prevent="login">
         <div class="field">
           <label>用户名</label>
-          <input v-model="username" type="text" required autocomplete="username">
+          <input v-model="username" :disabled="loading" type="text" required autocomplete="username">
         </div>
         <div class="field">
           <label>密码</label>
-          <input v-model="password" type="password" required autocomplete="current-password">
+          <input v-model="password" :disabled="loading" type="password" required autocomplete="current-password">
         </div>
-        <p v-if="error" class="error">{{ error }}</p>
+        <p v-if="error" class="error" role="alert">{{ error }}</p>
         <button type="submit" class="btn-primary" :disabled="loading">
           {{ loading ? '登录中...' : '登录' }}
         </button>

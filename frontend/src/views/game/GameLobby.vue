@@ -1,18 +1,20 @@
 <script setup>
-import { onMounted, onUnmounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { onMounted, ref, watch } from 'vue'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { useGameStore } from '../../stores/game.js'
 
 const store = useGameStore()
+const route = useRoute()
 const router = useRouter()
 
 const name = ref(localStorage.getItem('playerName') || '')
 const password = ref('')
-const joinCode = ref('')
+const joinCode = ref(typeof route.query.room === 'string' ? route.query.room.toUpperCase() : '')
 const joinPwd = ref('')
 const selectedGame = ref('')
 const playerCount = ref(0)
 const turnTimeout = ref(30)
+let expectedRoomCode = joinCode.value
 
 function selectGame(g) {
   selectedGame.value = g.id
@@ -21,43 +23,60 @@ function selectGame(g) {
 
 function createRoom() {
   if (!name.value.trim()) { store.error = '请输入你的名字'; return }
+  expectedRoomCode = ''
   localStorage.setItem('playerName', name.value.trim())
   store.createRoom(selectedGame.value, name.value.trim(), password.value, playerCount.value, turnTimeout.value)
 }
 
 function joinRoom(spectate = false) {
   if (!name.value.trim() || !joinCode.value.trim()) { store.error = '请填写名字和房间号'; return }
+  joinCode.value = joinCode.value.trim().toUpperCase()
+  expectedRoomCode = joinCode.value
   localStorage.setItem('playerName', name.value.trim())
-  store.joinRoom(joinCode.value.trim().toUpperCase(), name.value.trim(), joinPwd.value, spectate)
+  store.joinRoom(joinCode.value, name.value.trim(), joinPwd.value, spectate)
 }
 
-// Watch for room assignment to navigate
-const unwatch = store.$subscribe((_, state) => {
-  if (state.room && state.room.code) {
-    router.push(`/game/${state.room.code}`)
+watch([() => store.room?.code, () => store.connectionStatus], ([code, status]) => {
+  if (code && status === 'connected' && !store.recoveryError && (!expectedRoomCode || code === expectedRoomCode)) {
+    router.replace({ name: 'GameRoom', params: { roomCode: code } })
   }
+}, { immediate: true })
+
+watch(() => store.games, (games) => {
+  if (games.length && !games.some(game => game.id === selectedGame.value)) selectGame(games[0])
+}, { immediate: true })
+
+watch(() => route.query.room, (code) => {
+  joinCode.value = typeof code === 'string' ? code.toUpperCase() : ''
+  expectedRoomCode = joinCode.value
 })
 
 onMounted(() => {
-  store.connect()
-  // Auto-select first game when list arrives
-  const stop = store.$subscribe((_, state) => {
-    if (state.games.length && !selectedGame.value) {
-      selectGame(state.games[0])
-      stop()
-    }
-  })
+  store.enterLobby(joinCode.value)
 })
 
-onUnmounted(() => { unwatch() })
+onBeforeRouteLeave((to) => {
+  if (to.name !== 'GameRoom') store.leaveRoom()
+})
+
+function resetRecovery() {
+  store.leaveRoom()
+  store.enterLobby(joinCode.value)
+}
 </script>
 
 <template>
   <div class="lobby">
     <h1>🎲 游戏大厅</h1>
-    <p v-if="store.error" class="error">{{ store.error }}</p>
+    <p class="connection-status" role="status">{{ store.connectionLabel }}</p>
+    <div v-if="store.recoveryError" class="error" role="alert">
+      <p>{{ store.recoveryError }}</p>
+      <button class="btn-outline" @click="resetRecovery">重新加入房间</button>
+    </div>
+    <p v-else-if="store.error" class="error" role="alert">{{ store.error }}</p>
+    <p v-if="route.query.room" class="join-hint">请输入姓名及房间密码，加入房间 {{ joinCode }}。</p>
 
-    <div class="lobby-grid">
+    <fieldset class="lobby-grid" :disabled="!store.actionsEnabled">
       <!-- 游戏选择 -->
       <section class="card">
         <h3>选择游戏</h3>
@@ -100,14 +119,16 @@ onUnmounted(() => { unwatch() })
           <button class="btn-outline" @click="joinRoom(true)">观战</button>
         </div>
       </section>
-    </div>
+    </fieldset>
   </div>
 </template>
 
 <style scoped>
 .lobby h1 { margin-bottom: 1.5rem; }
+.connection-status, .join-hint { color: var(--text-muted); margin-bottom: 1rem; }
 .error { color: var(--danger); background: rgba(255,50,50,0.1); padding: 0.5rem 1rem; border-radius: 6px; margin-bottom: 1rem; }
-.lobby-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; }
+.lobby-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; border: 0; padding: 0; min-width: 0; }
+.lobby-grid:disabled { opacity: 0.65; }
 .game-list { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.8rem; }
 .game-item { padding: 0.6rem 0.8rem; border-radius: 6px; cursor: pointer; display: flex; justify-content: space-between; background: var(--bg-card); border: 1px solid var(--border); transition: all 0.15s; }
 .game-item:hover { border-color: var(--accent); }

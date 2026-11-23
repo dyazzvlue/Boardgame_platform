@@ -3,10 +3,12 @@
 ## 技术栈
 
 - **Vue 3** (Composition API)
-- **Vue Router 4** (Hash mode)
+- **Vue Router 4** (History mode)
 - **Pinia** (状态管理)
 - **Vite 8** (构建工具)
 - **Marked** (Markdown 渲染)
+- **DOMPurify** (客户端 Markdown HTML 清洗)
+- **Node.js 22.12+（22.x）或 24+**，固定版本见 `frontend/.nvmrc`
 
 ---
 
@@ -46,6 +48,9 @@ frontend/
 |------|------|------|
 | `ws` | WebSocket | 当前连接 |
 | `connected` | boolean | 连接状态 |
+| `connectionStatus` | string | 连接中、恢复中、已连接或恢复失败 |
+| `pendingResponse` | string/null | 等待确认的请求编号 |
+| `requestExpired` | boolean | 当前请求是否已到截止时间 |
 | `myIdx` | number | 本玩家座位号（-1 = 未入座） |
 | `games` | array | 可用游戏列表 |
 | `room` | object | 当前房间状态 |
@@ -61,13 +66,14 @@ frontend/
 |------|------|
 | `connect()` | 建立 WebSocket 连接 |
 | `send(msg)` | 发送 JSON 消息 |
-| `respond(kind, value)` | 发送 response 消息 |
-| `createRoom(opts)` | 创建房间 |
+| `respond(kind, value)` | 携带请求编号提交，收到 ACK 才清除操作 |
+| `createRoom(gameId, name, password, playerCount, turnTimeout)` | 创建房间 |
 | `joinRoom(roomId, name, password)` | 加入房间 |
 | `startGame()` | 手动开始 |
-| `addAi()` | 添加 AI |
+| `addAI()` | 添加 AI |
+| `leaveRoom()` | 明确离房并清除恢复凭证 |
 | `leaveGame()` | 离开游戏（AI 接管） |
-| `returnRoom()` | 返回大厅 |
+| `returnRoom()` | 对局结束后返回同一房间的等待室 |
 
 ### 消息路由
 
@@ -77,8 +83,9 @@ frontend/
 |------|------|
 | `game_list` | 更新 `games` |
 | `room` | 更新 `room` + `myIdx` |
-| `state` | 更新 `gameState`，清除 `request` |
+| `state` | 更新 `gameState`，不清除仍在等待的操作 |
 | `request` | 更新 `request` |
+| `response_ack` | 确认对应提交；成功后清除操作，拒绝时明确提示 |
 | `log` | 追加到 `logs` |
 | `game_over` | 设置 `gameOver` |
 | `countdown` | 设置 `countdown` |
@@ -142,14 +149,14 @@ const renderers = {
 | 路径 | 组件 | 说明 |
 |------|------|------|
 | `/` | BlogHome | 博客首页 |
-| `/post/:id` | PostDetail | 文章详情 |
-| `/category/:id` | CategoryView | 分类页 |
+| `/post/:slug` | PostDetail | 文章详情 |
+| `/category/:slug` | CategoryView | 分类页 |
 | `/game` | GameLobby | 游戏大厅 |
-| `/game/room` | GameRoom | 游戏房间 |
+| `/game/:roomCode` | GameRoom | 游戏房间，刷新时尝试恢复本人座位 |
 | `/admin/login` | AdminLogin | 管理员登录 |
 | `/admin` | AdminDashboard | 管理后台 |
-| `/admin/post/new` | PostEditor | 新建文章 |
-| `/admin/post/:id` | PostEditor | 编辑文章 |
+| `/admin/posts/new` | PostEditor | 新建文章 |
+| `/admin/posts/:id/edit` | PostEditor | 编辑文章 |
 
 ---
 
@@ -157,13 +164,14 @@ const renderers = {
 
 ```bash
 cd frontend
-npm install          # 安装依赖
+npm ci               # 按锁文件安装依赖
+npm test             # 请求状态、竞态和游戏生命周期回归
 npm run build        # 构建，输出到 ../framework/static/dist
 npm run dev          # 开发模式（HMR，代理 API 到后端 8000 端口）
 ```
 
 Vite 配置关键点：
-- `base: './'` — 相对路径，适配任意部署根
+- 默认 `base: '/'` — 使用站点根路径，深层博客路由仍能加载资源
 - `build.outDir: '../framework/static/dist'` — 直接输出到后端静态目录
 - 开发模式下 proxy `/api` 和 `/ws` 到 `http://localhost:8000`
 
@@ -178,6 +186,18 @@ Vite 配置关键点：
 5. 修改 `.vue` 文件后自动热更新
 
 **生产部署**时只需构建前端（`npm run build`），后端直接服务 `dist/` 中的文件。
+
+### 博客首屏与 Markdown
+
+- `framework/blog/pages.py` 按请求生成博客 HTML，使用构建 manifest 补齐页面 CSS，禁用 JS 仍可阅读。
+- `src/lib/blogPage.js` 消费与当前 URL 匹配的一次性 `blog-bootstrap`；不重复请求首屏数据。
+  等待路由就绪后挂载 Vue，以免先用空路由清除服务端正文。
+- 页面数据只写入当前请求序号，保持取消与竞态保护；后续导航通过 API 获取最新内容。
+- `src/lib/markdown.js` 对文章与编辑器预览统一使用 DOMPurify，不要直接把 Marked 输出交给 `v-html`。
+  服务端 API 提供的 `content_html` 也在浏览器清洗；正文图片统一 lazy/async。
+- 文章元信息在数据就绪后同步；进入游戏或后台时删除文章 JSON-LD、分享图和发布时间。
+- 博客样式使用组件根类命名空间，方便原始 SSR HTML 共用，不能依赖 Vue 编译生成的 scoped 属性。
+- 运行 `npm run test:e2e` 覆盖无 JS、移动端、数据复用、SPA SEO、实时编辑撤回、Markdown 预览与游戏恢复。
 
 ---
 
@@ -195,7 +215,9 @@ Vite 配置关键点：
 ## 常见坑
 
 1. **Per-Player State**：`gameState` 只包含本玩家可见的信息，不同玩家看到的状态不同
-2. **request 清除时机**：收到新 `state` 时自动清除 `request`，渲染器无需手动清除
+2. **request 清除时机**：等待匹配的成功 ACK、新请求或终局；不要用普通状态广播清除正在等待的操作
 3. **myIdx = -1**：观战者不会收到 `request`，但会收到 `state` 和 `log`
-4. **Hash 路由**：使用 `createWebHashHistory()`，避免服务端路由配置问题
+4. **History 路由**：博客由服务端预渲染，游戏/admin 由 SPA fallback 处理；不要改为 Hash 路由
+5. **HTTP 状态**：复用 `src/lib/http.js` 的请求校验、取消和序号管理，错误不能伪装成空列表或保存成功
+6. **断线恢复**：本人凭证只保存在 sessionStorage；收到 4001 表示另一页面已接管，不应循环抢回连接
 5. **Vite 缓存**：构建输出带 hash 文件名，无需手动管理缓存破坏

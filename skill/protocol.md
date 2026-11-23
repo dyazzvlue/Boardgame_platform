@@ -27,7 +27,7 @@
 ```
 - `turn_timeout`：每回合时限（秒），`0` = 不限制，默认 `30`
 - 创建者自动成为房主（`host_idx`）
-- 响应：`room`（含 `your_idx`）
+- 响应：`room`（含 `your_idx` 和仅属于该成员的 `resume_token`）
 
 ---
 
@@ -68,12 +68,37 @@
 ```json
 {
   "type": "response",
+  "request_id": "服务端生成的请求编号",
   "kind": "bid",
   "value": 5
 }
 ```
 - `kind` 必须与当前 `request` 消息的 `kind` 一致
 - `value` 类型由各游戏的 `kind` 约定决定
+- `request_id` 必须匹配当前请求；过期请求被拒绝，重复提交只确认，不重复执行
+- 响应：`response_ack { request_id, accepted, msg }`；客户端收到成功确认后才清除操作
+
+---
+
+### `resume` — 恢复连接
+```json
+{ "type": "resume", "room": "ABC123", "token": "本人收到的 resume_token" }
+```
+- 断线宽限期默认 30 秒，通过 `ROOM_RECONNECT_GRACE_SECONDS` 设置（0–600 秒）
+- 宽限期内不触发 AI 接管，原回合时限仍继续计时
+- 成功后恢复原座位，依次同步 `room`、玩家视图、尚未完成的 `request` 或终局结果
+- 客户端仅在当前浏览器会话保存恢复凭证，禁止放入 URL、日志或共享房间状态
+- 超时或凭证无效返回 `error { code: "resume_expired" }`
+- 观战者断开直接离房，重新观战需再次加入
+
+---
+
+### `leave_room` — 明确离房
+```json
+{ "type": "leave_room" }
+```
+- 等待室释放席位并转移房主；进行中的游戏立即由 AI 接管，不保留恢复资格
+- 成功响应 `left_room`；所有真人离开后关闭房间、取消倒计时和广播任务
 
 ---
 
@@ -130,11 +155,14 @@
   "spectators": 0,
   "started": false,
   "turn_timeout": 30,
-  "your_idx": 0
+  "your_idx": 0,
+  "resume_token": "仅当前成员的恢复凭证",
+  "reconnect_grace_seconds": 30
 }
 ```
 - `your_idx` 仅在单独发给某玩家时携带
 - `host_idx = -1` 表示房主已离线
+- 玩家项的 `reconnecting: true` 表示正在宽限期内，尚未切换 AI
 
 ---
 
@@ -154,6 +182,8 @@
 ```json
 {
   "type": "request",
+  "request_id": "服务端生成的请求编号",
+  "expires_at": 1780000000,
   "player_idx": 2,
   "kind": "bid",
   "data": { "current_bid": 3, "min_bid": 1 },
@@ -161,6 +191,8 @@
 }
 ```
 - `turn_timeout`：该回合时限（秒），`0` = 不限制；前端用于倒计时显示
+- `expires_at` 为 Unix 秒数，`null` 表示无时限；重连后仍使用原截止时间
+- 请求只发送给对应玩家，不广播操作数据给其他玩家或观战者
 - 超时后服务器不等待，直接返回 `None`（游戏层处理）
 
 ---
@@ -195,7 +227,7 @@
 { "type": "error", "code": "room_not_found", "msg": "房间 XYZ 不存在" }
 ```
 
-**ErrorCode：** `wrong_password` / `room_not_found` / `room_full` / `game_started` / `invalid_msg` / `not_your_turn` / `forbidden`
+**ErrorCode：** `wrong_password` / `room_not_found` / `room_full` / `game_started` / `invalid_msg` / `not_your_turn` / `forbidden` / `resume_expired` / `room_closed` / `game_start_failed` / `game_busy` / `player_reconnecting`
 
 ---
 
